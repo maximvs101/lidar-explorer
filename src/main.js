@@ -3,6 +3,7 @@ import { RequestQueue } from './net/queue.js';
 import { DecoderPool } from './decode/decoder.js';
 import { TileIndex, acquisitionSeason } from './geo/wfs.js';
 import { isWithinMetropole, tileNameAt } from './geo/projection.js';
+import { viewFootprint } from './geo/footprint.js';
 import { LocationPicker } from './ui/map.js';
 import { Viewer } from './render/viewer.js';
 import { PRESETS, PRESET_NAMES } from './render/presets.js';
@@ -759,6 +760,40 @@ function renderScale() {
     `${formatLength(chosen.metres)} au centre · vue vers le ${cardinal(azimuth)} (${Math.round(azimuth)}°)`;
 }
 
+/**
+ * Reporte sur la carte l'endroit et la direction regardés.
+ *
+ * La carte et la scène étaient deux panneaux sans lien : rien ne disait où l'on
+ * se trouvait ni de quel côté on regardait. Le secteur est recalculé à chaque
+ * tour d'interface, mais redessiné seulement quand la vue a bougé — Leaflet
+ * reconstruit ses couches à chaque appel, et le faire deux fois par seconde
+ * pour rien ferait clignoter le tracé.
+ */
+let derniereEmpreinte = '';
+function renderFootprint() {
+  if (!session || !viewer.sceneOrigin) {
+    if (derniereEmpreinte !== '') { picker.showView(null); derniereEmpreinte = ''; }
+    return;
+  }
+  const [ox, oy] = viewer.sceneOrigin;
+  const cam = viewer.camera.position;
+  const cible = viewer.controls.target;
+  const empreinte = viewFootprint({
+    camera: [cam.x + ox, cam.y + oy],
+    target: [cible.x + ox, cible.y + oy],
+    fovRadians: (viewer.camera.fov * Math.PI) / 180,
+    aspect: viewer.camera.aspect,
+  });
+  if (!empreinte) return;
+  const signature = [
+    Math.round(empreinte.apex[0]), Math.round(empreinte.apex[1]),
+    Math.round(empreinte.target[0]), Math.round(empreinte.target[1]),
+  ].join(',');
+  if (signature === derniereEmpreinte) return;
+  derniereEmpreinte = signature;
+  picker.showView(empreinte);
+}
+
 /** Ne réinterroge l'index que si la vue a réellement bougé. */
 let lastReach = null;
 function maybeExtend() {
@@ -876,6 +911,7 @@ setInterval(() => {
   const s = viewer.stats;
   renderProgress();
   renderScale();
+  renderFootprint();
   maybeExtend();
   const sel = s.lastSelection;
   // En mode canopée, on affiche ce que la mesure vaut : la part de terrain

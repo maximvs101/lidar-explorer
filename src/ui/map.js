@@ -36,6 +36,11 @@ export class LocationPicker {
 
     this.coverageLayer = L.layerGroup().addTo(this.map);
     this.selectionLayer = L.layerGroup().addTo(this.map);
+    // Dessous les deux autres : l'empreinte de la vue ne doit masquer ni la
+    // dalle choisie ni les rectangles de couverture.
+    this.viewLayer = L.layerGroup();
+    this.viewLayer.addTo(this.map);
+    this.viewLayer.bringToBack?.();
 
     this.map.on('click', (event) => {
       const { lat, lng } = event.latlng;
@@ -110,6 +115,39 @@ export class LocationPicker {
       [s, w],
       [n, e],
     ];
+  }
+
+  /**
+   * Pose sur la carte l'empreinte au sol de la vue 3D.
+   *
+   * Le calcul du secteur vit dans `geo/footprint.js` : ici, on ne fait que
+   * dessiner. Passer `null` efface, ce qui est l'état quand aucune scène n'est
+   * chargée — une empreinte qui survivrait à sa scène serait un mensonge.
+   */
+  showView(footprint) {
+    this.viewLayer.clearLayers();
+    if (!footprint) return;
+    const enLatLng = (p) => { const [lon, lat] = toWgs84(p[0], p[1]); return [lat, lon]; };
+
+    // Le fond Plan IGN est clair et chargé : un trait fin à 12 % de remplissage
+    // s'y perd. Mesuré à l'écran avant de conclure — le secteur était bien
+    // dessiné, sur 229 × 298 px, mais illisible.
+    L.polygon(footprint.polygon.map(enLatLng), {
+      color: '#1b6ea8', weight: 2, opacity: 0.95,
+      fillColor: '#7fd1ff', fillOpacity: 0.22, interactive: false,
+    }).addTo(this.viewLayer);
+
+    // L'axe dit la direction du regard sans avoir à lire la forme du secteur.
+    if (!footprint.zenith) {
+      L.polyline([enLatLng(footprint.apex), enLatLng(footprint.target)], {
+        color: '#1b6ea8', weight: 1.5, opacity: 0.8, dashArray: '4 4', interactive: false,
+      }).addTo(this.viewLayer);
+    }
+
+    L.circleMarker(enLatLng(footprint.target), {
+      radius: 4, color: '#0d3a58', fillColor: '#7fd1ff', fillOpacity: 1,
+      weight: 1.5, interactive: false,
+    }).addTo(this.viewLayer);
   }
 
   /** Marque le point choisi, et l'emprise de la dalle si elle existe. */
