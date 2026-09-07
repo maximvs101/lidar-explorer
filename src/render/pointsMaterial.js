@@ -59,6 +59,9 @@ const VERTEX = /* glsl */ `
   uniform float uBoost;
   uniform vec2 uClipCenter;
   uniform float uClipRadius;
+  // 0 = disque, 1 = carre. Un booleen suffit : la distance de Tchebychev
+  // (max des ecarts) decoupe un carre la ou la norme euclidienne fait un cercle.
+  uniform float uClipSquare;
   uniform float uTint;
   varying vec3 vColor;
 
@@ -79,9 +82,11 @@ const VERTEX = /* glsl */ `
     // Une classe masquée est renvoyée hors du volume de vue : rien n'est
     // rasterisé, ce qui coûte moins qu'un discard au fragment.
     if (entry.a < 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-    // Meme sort pour ce qui deborde de la decoupe circulaire.
-    if (uClipRadius > 0.0 && distance(position.xy, uClipCenter) > uClipRadius) {
-      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    // Meme sort pour ce qui deborde de la decoupe.
+    if (uClipRadius > 0.0) {
+      vec2 ecart = abs(position.xy - uClipCenter);
+      float portee = uClipSquare > 0.5 ? max(ecart.x, ecart.y) : length(ecart);
+      if (portee > uClipRadius) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     }
   }
 `;
@@ -108,7 +113,7 @@ export class PointsMaterialPool {
     this.materials = new Map(); // taille de point -> ShaderMaterial
     this.shared = {
       uScale: 1, uAttenuate: attenuate ? 1 : 0, uRound: round ? 1 : 0, uBoost: 1,
-      uClipCenter: [0, 0], uClipRadius: 0, uTint: 0,
+      uClipCenter: [0, 0], uClipRadius: 0, uClipSquare: 0, uTint: 0,
     };
   }
 
@@ -168,6 +173,7 @@ export class PointsMaterialPool {
         uBoost: { value: this.shared.uBoost },
         uClipCenter: { value: new THREE.Vector2(...this.shared.uClipCenter) },
         uClipRadius: { value: this.shared.uClipRadius },
+        uClipSquare: { value: this.shared.uClipSquare },
         uTint: { value: this.shared.uTint },
       },
       vertexShader: VERTEX,
@@ -210,10 +216,11 @@ export class PointsMaterialPool {
     this._pushShared();
   }
 
-  /** Decoupe cylindrique. Un rayon nul ou negatif la desactive. */
-  setClip(center, radius) {
+  /** Decoupe. `shape` vaut 'circle' ou 'square' ; un rayon nul la desactive. */
+  setClip(center, radius, shape = 'circle') {
     this.shared.uClipCenter = center ? [center[0], center[1]] : [0, 0];
     this.shared.uClipRadius = radius ?? 0;
+    this.shared.uClipSquare = shape === 'square' ? 1 : 0;
     this._pushShared();
   }
 
@@ -231,6 +238,7 @@ export class PointsMaterialPool {
       material.uniforms.uBoost.value = this.shared.uBoost;
       material.uniforms.uClipCenter.value.set(this.shared.uClipCenter[0], this.shared.uClipCenter[1]);
       material.uniforms.uClipRadius.value = this.shared.uClipRadius;
+      material.uniforms.uClipSquare.value = this.shared.uClipSquare;
       material.uniforms.uTint.value = this.shared.uTint;
     }
   }

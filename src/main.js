@@ -5,7 +5,7 @@ import { TileIndex, acquisitionSeason } from './geo/wfs.js';
 import { isWithinMetropole, tileNameAt } from './geo/projection.js';
 import { LocationPicker } from './ui/map.js';
 import { Viewer } from './render/viewer.js';
-import { DEFAULT_PALETTE, MODEL_PALETTE } from './render/pointsMaterial.js';
+import { PRESETS, PRESET_NAMES } from './render/presets.js';
 import { className, shares } from './analysis/classStats.js';
 import { cardinal, chooseScale, formatLength, pixelsPerMetre, viewAzimuth } from './ui/scale.js';
 
@@ -29,17 +29,17 @@ const el = {
   scale: document.getElementById('scale'),
   scalebar: document.getElementById('scalebar'),
   scaletext: document.getElementById('scaletext'),
-  modeScan: document.getElementById('mode-scan'),
-  modeModel: document.getElementById('mode-model'),
+  modes: document.getElementById('modes'),
 };
 
-/** Mode d'affichage : lecture technique, ou maquette. */
-let dioramaOn = false;
+/** Preset d'affichage courant. */
+let presetName = 'lecture';
 
 /** Classes masquées, partagées entre la légende et les boutons de préréglage. */
 const hidden = new Set();
 
-const PRESETS = {
+/** Filtres rapides de classes — sans rapport avec les presets d'affichage. */
+const CLASS_FILTERS = {
   tout: [],
   sol: [1, 3, 4, 5, 6, 9, 17, 64, 65, 66, 67],
   bati: [1, 2, 3, 4, 5, 9, 17, 64, 65, 66, 67],
@@ -66,7 +66,7 @@ function renderLegend() {
   const rows = shares(counts);
   el.legend.innerHTML = rows
     .map((r) => {
-      const rgb = (dioramaOn ? MODEL_PALETTE : DEFAULT_PALETTE)[r.code] ?? [90, 90, 95];
+      const rgb = PRESETS[presetName].palette[r.code] ?? [90, 90, 95];
       const off = hidden.has(r.code) ? ' off' : '';
       return (
         `<label class="cls${off}"><input type="checkbox" data-code="${r.code}"` +
@@ -343,16 +343,27 @@ el.clear.addEventListener('click', async () => {
 });
 el.load.addEventListener('click', () => loadSelected());
 
-function setMode(on) {
-  dioramaOn = on;
-  viewer.setDiorama(on);
-  el.modeScan.classList.toggle('on', !on);
-  el.modeModel.classList.toggle('on', on);
-  document.getElementById('stage').style.background = on ? '#ece7dd' : '#080a0e';
+function setPreset(name) {
+  presetName = PRESETS[name] ? name : 'lecture';
+  viewer.applyPreset(presetName);
+  for (const button of el.modes.querySelectorAll('button')) {
+    button.classList.toggle('on', button.dataset.preset === presetName);
+  }
+  const bg = PRESETS[presetName].background.toString(16).padStart(6, '0');
+  document.getElementById('stage').style.background = `#${bg}`;
   renderLegend();
 }
-el.modeScan.addEventListener('click', () => setMode(false));
-el.modeModel.addEventListener('click', () => setMode(true));
+
+el.modes.innerHTML = PRESET_NAMES.map(
+  (n) => `<button data-preset="${n}"${n === presetName ? ' class="on"' : ''}>${PRESETS[n].label}</button>`,
+).join('');
+el.modes.addEventListener('click', (event) => {
+  const name = event.target.dataset?.preset;
+  if (name) setPreset(name);
+});
+
+/** Compatibilité avec les vérifications déjà écrites. */
+const setMode = (on) => setPreset(on ? 'maquette' : 'lecture');
 
 el.legend.addEventListener('change', (event) => {
   const code = Number(event.target.dataset.code);
@@ -366,7 +377,7 @@ el.presets.addEventListener('click', (event) => {
   const preset = event.target.dataset.preset;
   if (!preset) return;
   hidden.clear();
-  for (const code of PRESETS[preset]) hidden.add(code);
+  for (const code of CLASS_FILTERS[preset]) hidden.add(code);
   applyHidden();
 });
 
@@ -469,6 +480,7 @@ window.__renderScale = renderScale;
 window.__extend = extendToNeighbours;
 window.__maybeExtend = maybeExtend;
 window.__setMode = setMode;
+window.__setPreset = setPreset;
 window.__picker = picker;
 window.__index = index;
 window.__pick = pick;

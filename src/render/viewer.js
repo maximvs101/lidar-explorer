@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { diffSelection, selectAcross } from '../lod/selector.js';
-import { DEFAULT_PALETTE, MODEL_PALETTE, PointsMaterialPool } from './pointsMaterial.js';
+import { PointsMaterialPool } from './pointsMaterial.js';
+import { PRESETS, getPreset } from './presets.js';
 import { DioramaRenderer } from './diorama.js';
 import { histogram } from '../analysis/classStats.js';
 
@@ -40,7 +41,9 @@ export class Viewer {
     this.plinth = null;
     this.clipRadius = 450;
     this.clipCenter = [0, 0];
-    this.backgrounds = { scan: 0x080a0e, model: 0xece7dd };
+    this.clipShape = null;
+    this.preset = getPreset('lecture');
+    this.presetName = 'lecture';
     // Toutes les dalles partagent une seule origine de scene, celle de la
     // premiere chargee. Chacune garde en revanche son propre octree : son
     // centre est exprime par rapport a cette origine commune.
@@ -195,29 +198,54 @@ export class Viewer {
    * comparer les deux rendus sur une scene identique, et donc de mesurer ce que
    * l'habillage apporte vraiment.
    */
-  setDiorama(on) {
-    this.dioramaOn = on;
-    this.materials.setPalette(on ? MODEL_PALETTE : DEFAULT_PALETTE);
-    const background = on ? this.backgrounds.model : this.backgrounds.scan;
-    this.renderer.setClearColor(background, 1);
-    const c = new THREE.Color(background);
-    this.diorama.background.set(background);
-    this.diorama.edlMaterial.uniforms.uBackground.value.set(c.r, c.g, c.b);
-    // Points carres et grossis en maquette : ils se joignent en surface au lieu
-    // de laisser voir le fond entre eux. Ronds et espaces, chaque interstice
-    // devient un trou noir sous l'ombrage de profondeur.
-    this.materials.setRound(!on);
-    this.materials.setBoost(on ? 1.55 : 1);
-    this.materials.setTint(on ? this.diorama.settings.tint : 0);
+  /**
+   * Applique un preset : nuancier, fond, decoupe, socle et post-traitement.
+   *
+   * Tous les presets lisent exactement les memes points — rien n'est recharge,
+   * rien n'est retouche cote donnees. C'est ce qui permet de comparer deux
+   * rendus sur une scene identique, donc de mesurer ce que l'habillage apporte.
+   */
+  applyPreset(name) {
+    const preset = getPreset(name);
+    this.preset = preset;
+    this.presetName = PRESETS[name] ? name : 'lecture';
+    this.dioramaOn = Boolean(preset.post);
 
-    if (on) {
+    this.materials.setPalette(preset.palette);
+    this.renderer.setClearColor(preset.background, 1);
+    this.diorama.background.set(preset.background);
+    // Octets bruts, pas THREE.Color : celui-ci rend du lineaire et le fond
+    // ressortirait beaucoup trop sombre.
+    this.diorama.edlMaterial.uniforms.uBackground.value.set(
+      ((preset.background >> 16) & 0xff) / 255,
+      ((preset.background >> 8) & 0xff) / 255,
+      (preset.background & 0xff) / 255,
+    );
+
+    // Points carres et grossis hors mode lecture : ils se joignent en surface au
+    // lieu de laisser voir le fond entre eux. Ronds et espaces, chaque
+    // interstice devient un trou noir sous l'ombrage de profondeur.
+    this.materials.setRound(preset.round ?? true);
+    this.materials.setBoost(preset.boost ?? 1);
+
+    if (preset.diorama) this.diorama.set(preset.diorama);
+    this.materials.setTint(preset.tint ?? preset.diorama?.tint ?? 0);
+
+    this.clipShape = preset.shape ?? null;
+    if (this.clipShape) {
+      this.clipRadius = preset.radius ?? this.clipRadius;
       this.clipCenter = [this.controls.target.x, this.controls.target.y];
-      this.materials.setClip(this.clipCenter, this.clipRadius);
+      this.materials.setClip(this.clipCenter, this.clipRadius, this.clipShape);
       this._buildPlinth();
     } else {
       this.materials.setClip(null, 0);
       this._removePlinth();
     }
+  }
+
+  /** Compatibilite : l'ancien interrupteur bascule entre deux presets. */
+  setDiorama(on) {
+    this.applyPreset(on ? 'maquette' : 'lecture');
   }
 
   /**
@@ -237,13 +265,19 @@ export class Viewer {
     const floor = bounds.minZ - oz;
     const thickness = Math.max(this.clipRadius * 0.16, 25);
 
-    const geometry = new THREE.CylinderGeometry(this.clipRadius, this.clipRadius, thickness, 96, 1, false);
-    geometry.rotateX(Math.PI / 2); // l'axe du cylindre est Y chez Three, Z chez nous
+    const r = this.clipRadius;
+    let geometry;
+    if (this.clipShape === 'square') {
+      geometry = new THREE.BoxGeometry(r * 2, r * 2, thickness);
+    } else {
+      geometry = new THREE.CylinderGeometry(r, r, thickness, 96, 1, false);
+      geometry.rotateX(Math.PI / 2); // l'axe du cylindre est Y chez Three, Z chez nous
+    }
     geometry.translate(this.clipCenter[0], this.clipCenter[1], floor - thickness / 2 + 1);
 
     this.plinth = new THREE.Mesh(
       geometry,
-      new THREE.MeshBasicMaterial({ color: 0xcabfa8 }),
+      new THREE.MeshBasicMaterial({ color: this.preset.plinth ?? 0xcabfa8 }),
     );
     this.plinth.frustumCulled = false;
     this.scene.add(this.plinth);
@@ -268,11 +302,11 @@ export class Viewer {
     return (this.plinth ? 1 : 0) + (this.diorama.uploaded ? 1 : 0);
   }
 
-  /** Rayon de la decoupe circulaire, en metres. */
+  /** Demi-cote ou rayon de la decoupe, en metres. */
   setClipRadius(radius) {
     this.clipRadius = radius;
-    if (this.dioramaOn) {
-      this.materials.setClip(this.clipCenter, radius);
+    if (this.clipShape) {
+      this.materials.setClip(this.clipCenter, radius, this.clipShape);
       this._buildPlinth();
     }
   }

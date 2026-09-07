@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PALETTE, MODEL_PALETTE } from '../src/render/pointsMaterial.js';
 import { DIORAMA_DEFAULTS, lightVector } from '../src/render/diorama.js';
+import { PRESETS, PRESET_NAMES, getPreset } from '../src/render/presets.js';
 import { CLASS_NAMES } from '../src/analysis/classStats.js';
 
 describe('palettes', () => {
@@ -95,5 +96,62 @@ describe('direction de la lumière', () => {
     expect(a[0]).toBeCloseTo(-b[0]);
     expect(a[1]).toBeCloseTo(-b[1]);
     expect(a[2]).toBeCloseTo(b[2]); // même hauteur
+  });
+});
+
+describe('presets d’affichage', () => {
+  it('exposent tous un libellé, une palette et un fond', () => {
+    expect(PRESET_NAMES.length).toBeGreaterThanOrEqual(3);
+    for (const name of PRESET_NAMES) {
+      const preset = PRESETS[name];
+      expect(preset.label, `${name}: libellé`).toBeTruthy();
+      expect(preset.palette, `${name}: palette`).toBeTruthy();
+      expect(typeof preset.background, `${name}: fond`).toBe('number');
+    }
+  });
+
+  it('couvrent toutes les classes nommées, dans chaque preset', () => {
+    // Un code manquant dans une seule palette rend la classe grise au moment où
+    // l'on bascule dessus : elle disparaît à l'œil sans erreur ni message.
+    for (const name of PRESET_NAMES) {
+      for (const code of Object.keys(CLASS_NAMES)) {
+        expect(PRESETS[name].palette[code], `${name}: classe ${code}`).toBeDefined();
+      }
+    }
+  });
+
+  it('n’utilisent que des formes de découpe connues', () => {
+    for (const name of PRESET_NAMES) {
+      expect([null, undefined, 'circle', 'square']).toContain(PRESETS[name].shape);
+    }
+  });
+
+  it('donnent un socle et un rayon à tout preset qui découpe', () => {
+    // Découper sans socle laisse un nuage amputé qui flotte ; découper sans
+    // rayon désactive silencieusement la découpe.
+    for (const name of PRESET_NAMES) {
+      const preset = PRESETS[name];
+      if (!preset.shape) continue;
+      expect(preset.radius, `${name}: rayon`).toBeGreaterThan(0);
+      expect(typeof preset.plinth, `${name}: socle`).toBe('number');
+    }
+  });
+
+  it('accompagnent tout post-traitement de ses réglages', () => {
+    for (const name of PRESET_NAMES) {
+      const preset = PRESETS[name];
+      if (!preset.post) continue;
+      expect(preset.diorama, `${name}: réglages`).toBeTruthy();
+      expect(preset.diorama.radius, `${name}: rayon d'ombrage`).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('laisse le mode lecture sans découpe ni post-traitement', () => {
+    expect(PRESETS.lecture.shape ?? null).toBeNull();
+    expect(PRESETS.lecture.post).toBeFalsy();
+  });
+
+  it('rend le preset de repli sur un nom inconnu', () => {
+    expect(getPreset('nexistepas')).toBe(PRESETS.lecture);
   });
 });
