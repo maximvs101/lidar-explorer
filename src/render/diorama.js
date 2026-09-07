@@ -37,6 +37,9 @@ const EDL_FRAG = /* glsl */ `
   uniform float uSaturation;
   uniform float uVignette;
   uniform vec3 uBackground;
+  uniform vec3 uLight;
+  uniform float uLightAmount;
+  uniform float uLightSpread;
 
   float linearise(float d) {
     float z = d * 2.0 - 1.0;
@@ -70,7 +73,30 @@ const EDL_FRAG = /* glsl */ `
       + neighbour(vec2( 0.7, -0.7), z0) + neighbour(vec2(-0.7, -0.7), z0);
     float shade = exp(-response * uStrength);
 
-    vec3 color = source.rgb * shade;
+    // Modele directionnel. L'ombrage de profondeur creuse les aretes mais ne dit
+    // pas d'ou vient la lumiere : tout est eclaire pareil et les pans de toit
+    // opposes se ressemblent. On estime donc une normale par differences finies
+    // sur la profondeur, et on ajoute un simple produit scalaire.
+    // Le pas doit etre large : d'un texel a l'autre, la profondeur d'un nuage de
+    // points saute d'un point a son voisin, pas d'un morceau de surface au
+    // suivant. Un gradient calcule sur un texel ne mesure que ce bruit.
+    vec2 pas = uTexel * uLightSpread;
+    float zl = linearise(texture2D(tDepth, vUv - vec2(pas.x, 0.0)).x);
+    float zr = linearise(texture2D(tDepth, vUv + vec2(pas.x, 0.0)).x);
+    float zd = linearise(texture2D(tDepth, vUv - vec2(0.0, pas.y)).x);
+    float zu = linearise(texture2D(tDepth, vUv + vec2(0.0, pas.y)).x);
+    // Le gradient est en metres par pas : on le ramene a une pente sans unite
+    // avant d'en faire une normale, sinon l'echelle de la scene decide de tout.
+    float echelle = max(linearise(d0) * 0.02, 0.5);
+    // Le sens des deux composantes a ete fixe par la mesure, pas par le
+    // raisonnement : entre l'orientation de vUv, celle de la profondeur et la
+    // convention d'azimut, se tromper d'un signe est trop facile. Le controle
+    // qui tranche : eclairer depuis l'ouest doit rendre la moitie gauche plus
+    // claire que ne le fait un eclairage depuis l'est.
+    vec3 normal = normalize(vec3((zr - zl) / echelle, (zu - zd) / echelle, 2.0));
+    float ndotl = clamp(dot(normal, normalize(uLight)) * 0.7 + 0.6, 0.0, 1.4);
+
+    vec3 color = source.rgb * shade * mix(1.0, ndotl, uLightAmount);
 
     // Un peu de saturation : la maquette assume la couleur, le scan la subit.
     float grey = dot(color, vec3(0.299, 0.587, 0.114));
@@ -124,9 +150,30 @@ const TILT_FRAG = /* glsl */ `
  * contour de chaque point et le rendu part en billes ; vers 2,4 il lit les
  * structures — aretes de toits, ruptures de facade — et les volumes se lisent.
  */
+/**
+ * Direction de la lumiere en espace ecran, depuis un azimut et une hauteur.
+ * L'azimut compte depuis le haut de l'image vers la droite — nord en haut,
+ * est a droite, comme sur une carte. Le vecteur pointe **vers** la source.
+ */
+export function lightVector(azimuthDeg, altitudeDeg) {
+  const az = (azimuthDeg * Math.PI) / 180;
+  const el = (altitudeDeg * Math.PI) / 180;
+  const horizontal = Math.cos(el);
+  return [Math.sin(az) * horizontal, Math.cos(az) * horizontal, Math.sin(el)];
+}
+
 export const DIORAMA_DEFAULTS = {
   strength: 16,
   radius: 2.4,
+  /** Azimut de la lumiere, en degres depuis le nord vers l'est. */
+  lightAzimuth: 315,
+  /** Hauteur de la lumiere au-dessus de l'horizon, en degres. */
+  lightAltitude: 48,
+  lightAmount: 0.55,
+  /** Empreinte du gradient de profondeur, en texels. */
+  lightSpread: 6,
+  /** Amplitude de la variation de teinte entre batiments voisins. */
+  tint: 0.16,
   saturation: 1.18,
   vignette: 0.24,
   tiltFocus: 0.54,
@@ -140,6 +187,7 @@ export class DioramaRenderer {
     this.background = new THREE.Color(background);
     this.settings = { ...DIORAMA_DEFAULTS };
     this.enabled = false;
+    this.uploaded = false;
 
     // Seule la première cible porte la profondeur : c'est celle qu'on lit.
     const depth = new THREE.DepthTexture(1, 1);
@@ -168,6 +216,9 @@ export class DioramaRenderer {
         uSaturation: { value: this.settings.saturation },
         uVignette: { value: this.settings.vignette },
         uBackground: { value: new THREE.Vector3(this.background.r, this.background.g, this.background.b) },
+        uLight: { value: new THREE.Vector3(0, 0, 1) },
+        uLightAmount: { value: this.settings.lightAmount },
+        uLightSpread: { value: this.settings.lightSpread },
       },
       vertexShader: EDL_VERT,
       fragmentShader: EDL_FRAG,
@@ -185,6 +236,7 @@ export class DioramaRenderer {
       fragmentShader: TILT_FRAG,
     });
 
+    this._updateLight();
     this.edlQuad = new FullScreenQuad(this.edlMaterial);
     this.tiltQuad = new FullScreenQuad(this.tiltMaterial);
   }
@@ -204,14 +256,31 @@ export class DioramaRenderer {
     u.uRadius.value = this.settings.radius;
     u.uSaturation.value = this.settings.saturation;
     u.uVignette.value = this.settings.vignette;
+    u.uLightAmount.value = this.settings.lightAmount;
+    u.uLightSpread.value = this.settings.lightSpread;
+    this._updateLight();
     const t = this.tiltMaterial.uniforms;
     t.uFocus.value = this.settings.tiltFocus;
     t.uBand.value = this.settings.tiltBand;
     t.uAmount.value = this.settings.tiltAmount;
   }
 
+  /**
+   * Direction de la lumiere en espace ecran, depuis un azimut et une hauteur.
+   * L'azimut compte depuis le haut de l'image vers la droite, comme sur une
+   * carte ou le nord est en haut.
+   */
+  _updateLight() {
+    const [x, y, z] = lightVector(this.settings.lightAzimuth, this.settings.lightAltitude);
+    this.edlMaterial.uniforms.uLight.value.set(x, y, z);
+  }
+
   /** Rend la scène avec les trois passes, vers le canvas. */
   render(scene, camera) {
+    // Une fois le quad plein ecran envoye au GPU, il y reste : `renderer.info`
+    // compte ce qui est alloue, pas ce qui vient d'etre dessine. Le controle
+    // anti-fuite doit donc en tenir compte meme apres retour en mode lecture.
+    this.uploaded = true;
     const u = this.edlMaterial.uniforms;
     u.uNear.value = camera.near;
     u.uFar.value = camera.far;

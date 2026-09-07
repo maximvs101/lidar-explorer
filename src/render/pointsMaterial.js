@@ -57,17 +57,32 @@ const VERTEX = /* glsl */ `
   uniform float uScale;
   uniform float uAttenuate;
   uniform float uBoost;
+  uniform vec2 uClipCenter;
+  uniform float uClipRadius;
+  uniform float uTint;
   varying vec3 vColor;
+
+  // Bruit de valeur : deux batiments voisins prennent des teintes legerement
+  // differentes, ce qui rend la surface vivante sans qu'on ait eu besoin de
+  // segmenter quoi que ce soit. La variation est spatiale, donc stable quand la
+  // camera bouge — un aleatoire par point scintillerait.
+  float bruit(vec2 p) {
+    return fract(sin(dot(floor(p / 14.0), vec2(12.9898, 78.233))) * 43758.5453);
+  }
 
   void main() {
     vec4 entry = texture2D(uPalette, vec2((classification + 0.5) / 256.0, 0.5));
-    vColor = entry.rgb;
+    vColor = entry.rgb * (1.0 + uTint * (bruit(position.xy) - 0.5));
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mv;
     gl_PointSize = uAttenuate > 0.5 ? max(1.0, uBoost * uSize * uScale / max(-mv.z, 0.001)) : uSize * uBoost;
     // Une classe masquée est renvoyée hors du volume de vue : rien n'est
     // rasterisé, ce qui coûte moins qu'un discard au fragment.
     if (entry.a < 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    // Meme sort pour ce qui deborde de la decoupe circulaire.
+    if (uClipRadius > 0.0 && distance(position.xy, uClipCenter) > uClipRadius) {
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    }
   }
 `;
 
@@ -91,7 +106,10 @@ export class PointsMaterialPool {
     this.hidden = new Set();
     this.texture = this._buildTexture();
     this.materials = new Map(); // taille de point -> ShaderMaterial
-    this.shared = { uScale: 1, uAttenuate: attenuate ? 1 : 0, uRound: round ? 1 : 0, uBoost: 1 };
+    this.shared = {
+      uScale: 1, uAttenuate: attenuate ? 1 : 0, uRound: round ? 1 : 0, uBoost: 1,
+      uClipCenter: [0, 0], uClipRadius: 0, uTint: 0,
+    };
   }
 
   _buildTexture() {
@@ -148,6 +166,9 @@ export class PointsMaterialPool {
         uAttenuate: { value: this.shared.uAttenuate },
         uRound: { value: this.shared.uRound },
         uBoost: { value: this.shared.uBoost },
+        uClipCenter: { value: new THREE.Vector2(...this.shared.uClipCenter) },
+        uClipRadius: { value: this.shared.uClipRadius },
+        uTint: { value: this.shared.uTint },
       },
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
@@ -189,12 +210,28 @@ export class PointsMaterialPool {
     this._pushShared();
   }
 
+  /** Decoupe cylindrique. Un rayon nul ou negatif la desactive. */
+  setClip(center, radius) {
+    this.shared.uClipCenter = center ? [center[0], center[1]] : [0, 0];
+    this.shared.uClipRadius = radius ?? 0;
+    this._pushShared();
+  }
+
+  /** Amplitude de la variation de teinte, 0 pour une couleur uniforme. */
+  setTint(amount) {
+    this.shared.uTint = amount;
+    this._pushShared();
+  }
+
   _pushShared() {
     for (const material of this.materials.values()) {
       material.uniforms.uScale.value = this.shared.uScale;
       material.uniforms.uAttenuate.value = this.shared.uAttenuate;
       material.uniforms.uRound.value = this.shared.uRound;
       material.uniforms.uBoost.value = this.shared.uBoost;
+      material.uniforms.uClipCenter.value.set(this.shared.uClipCenter[0], this.shared.uClipCenter[1]);
+      material.uniforms.uClipRadius.value = this.shared.uClipRadius;
+      material.uniforms.uTint.value = this.shared.uTint;
     }
   }
 

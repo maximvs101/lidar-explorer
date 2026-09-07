@@ -37,6 +37,9 @@ export class Viewer {
     this.materials = new PointsMaterialPool();
     this.diorama = new DioramaRenderer(this.renderer);
     this.dioramaOn = false;
+    this.plinth = null;
+    this.clipRadius = 450;
+    this.clipCenter = [0, 0];
     this.backgrounds = { scan: 0x080a0e, model: 0xece7dd };
     // Toutes les dalles partagent une seule origine de scene, celle de la
     // premiere chargee. Chacune garde en revanche son propre octree : son
@@ -205,6 +208,73 @@ export class Viewer {
     // devient un trou noir sous l'ombrage de profondeur.
     this.materials.setRound(!on);
     this.materials.setBoost(on ? 1.55 : 1);
+    this.materials.setTint(on ? this.diorama.settings.tint : 0);
+
+    if (on) {
+      this.clipCenter = [this.controls.target.x, this.controls.target.y];
+      this.materials.setClip(this.clipCenter, this.clipRadius);
+      this._buildPlinth();
+    } else {
+      this.materials.setClip(null, 0);
+      this._removePlinth();
+    }
+  }
+
+  /**
+   * Socle du diorama : un cylindre sous le nuage, du meme rayon que la decoupe.
+   *
+   * C'est lui qui fait basculer la lecture de « bout de territoire » a « objet
+   * pose sur une table ». Sans socle, la decoupe circulaire donne seulement un
+   * nuage amoute ; avec, l'epaisseur visible sous le terrain donne l'echelle et
+   * la matiere.
+   */
+  _buildPlinth() {
+    this._removePlinth();
+    const entry = this.tiles.get([...this.tiles.keys()][0]);
+    if (!entry) return;
+    const { bounds } = entry.tile.header;
+    const oz = this.origin[2];
+    const floor = bounds.minZ - oz;
+    const thickness = Math.max(this.clipRadius * 0.16, 25);
+
+    const geometry = new THREE.CylinderGeometry(this.clipRadius, this.clipRadius, thickness, 96, 1, false);
+    geometry.rotateX(Math.PI / 2); // l'axe du cylindre est Y chez Three, Z chez nous
+    geometry.translate(this.clipCenter[0], this.clipCenter[1], floor - thickness / 2 + 1);
+
+    this.plinth = new THREE.Mesh(
+      geometry,
+      new THREE.MeshBasicMaterial({ color: 0xcabfa8 }),
+    );
+    this.plinth.frustumCulled = false;
+    this.scene.add(this.plinth);
+  }
+
+  _removePlinth() {
+    if (!this.plinth) return;
+    this.scene.remove(this.plinth);
+    this.plinth.geometry.dispose();
+    this.plinth.material.dispose();
+    this.plinth = null;
+  }
+
+  /**
+   * Geometries que le rendu ajoute en plus des noeuds de points.
+   * Le controle anti-fuite compare `renderer.info` au nombre de noeuds : sans
+   * ce decompte, le socle passerait pour une fuite.
+   */
+  get extraGeometries() {
+    // Le socle, plus le quad plein ecran du post-traitement : celui-ci reste
+    // alloue une fois qu'il a servi, y compris apres retour en mode lecture.
+    return (this.plinth ? 1 : 0) + (this.diorama.uploaded ? 1 : 0);
+  }
+
+  /** Rayon de la decoupe circulaire, en metres. */
+  setClipRadius(radius) {
+    this.clipRadius = radius;
+    if (this.dioramaOn) {
+      this.materials.setClip(this.clipCenter, radius);
+      this._buildPlinth();
+    }
   }
 
   /** Une seule voie de rendu, pour que tout le reste ignore le mode courant. */
@@ -252,6 +322,7 @@ export class Viewer {
   }
 
   clear() {
+    this._removePlinth();
     for (const id of [...this.loaded.keys()]) this.removeNode(id);
     this.pending.clear();
     this.classCounts.clear();
@@ -420,6 +491,7 @@ export class Viewer {
     this._observer.disconnect();
     this.clear();
     this.controls.dispose();
+    this._removePlinth();
     this.diorama.dispose();
     this.materials.dispose();
     this.renderer.dispose();
