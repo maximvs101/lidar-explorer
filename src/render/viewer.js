@@ -42,6 +42,7 @@ export class Viewer {
     this.clipRadius = 450;
     this.clipCenter = [0, 0];
     this.clipShape = null;
+    this.pointScale = 1;
     this.preset = getPreset('lecture');
     this.presetName = 'lecture';
     // Toutes les dalles partagent une seule origine de scene, celle de la
@@ -226,7 +227,8 @@ export class Viewer {
     // lieu de laisser voir le fond entre eux. Ronds et espaces, chaque
     // interstice devient un trou noir sous l'ombrage de profondeur.
     this.materials.setRound(preset.round ?? true);
-    this.materials.setBoost(preset.boost ?? 1);
+    this.pointScale = preset.boost ?? 1;
+    this.materials.setBoost(this.pointScale);
 
     if (preset.diorama) this.diorama.set(preset.diorama);
     this.materials.setTint(preset.tint ?? preset.diorama?.tint ?? 0);
@@ -315,6 +317,19 @@ export class Viewer {
   draw() {
     if (this.dioramaOn) this.diorama.render(this.scene, this.camera);
     else this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * Grossissement des points, en multiple de la taille naturelle.
+   *
+   * Cette taille naturelle vaut deja l'espacement du niveau affiche : a 1, deux
+   * points voisins se touchent tout juste. Au-dela on gagne une surface pleine
+   * au prix du detail ; en deca le fond transparait, ce qui creuse des trous
+   * noirs sous l'ombrage de profondeur.
+   */
+  setPointScale(factor) {
+    this.pointScale = factor;
+    this.materials.setBoost(factor);
   }
 
   /** Masque ou révèle des classes. Instantané : seule la palette change. */
@@ -503,7 +518,7 @@ export class Viewer {
     // (~0,002), pas 8/255. Comparée à des octets lus par readPixels, elle fait
     // passer *tous* les pixels pour peints — le taux de couverture annonce
     // alors 100 % quel que soit le rendu.
-    const hex = this.dioramaOn ? this.backgrounds.model : this.backgrounds.scan;
+    const hex = this.preset.background;
     const br = (hex >> 16) & 0xff;
     const bg2 = (hex >> 8) & 0xff;
     const bb = hex & 0xff;

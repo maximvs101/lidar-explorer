@@ -30,7 +30,11 @@ const el = {
   scalebar: document.getElementById('scalebar'),
   scaletext: document.getElementById('scaletext'),
   modes: document.getElementById('modes'),
+  pointSize: document.getElementById('pointsize'),
+  pointSizeVal: document.getElementById('pointsizeval'),
 };
+
+const fmtScale = (n) => n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Preset d'affichage courant. */
 let presetName = 'lecture';
@@ -351,8 +355,18 @@ function setPreset(name) {
   }
   const bg = PRESETS[presetName].background.toString(16).padStart(6, '0');
   document.getElementById('stage').style.background = `#${bg}`;
+  // Chaque preset a sa taille de points ; le curseur suit le preset choisi
+  // plutot que d'imposer un reglage a tous.
+  el.pointSize.value = String(viewer.pointScale);
+  el.pointSizeVal.textContent = fmtScale(viewer.pointScale);
   renderLegend();
 }
+
+el.pointSize.addEventListener('input', () => {
+  const factor = Number(el.pointSize.value);
+  viewer.setPointScale(factor);
+  el.pointSizeVal.textContent = fmtScale(factor);
+});
 
 el.modes.innerHTML = PRESET_NAMES.map(
   (n) => `<button data-preset="${n}"${n === presetName ? ' class="on"' : ''}>${PRESETS[n].label}</button>`,
@@ -481,6 +495,7 @@ window.__extend = extendToNeighbours;
 window.__maybeExtend = maybeExtend;
 window.__setMode = setMode;
 window.__setPreset = setPreset;
+window.__setPointScale = (f) => { el.pointSize.value = String(f); el.pointSize.dispatchEvent(new Event('input')); };
 window.__picker = picker;
 window.__index = index;
 window.__pick = pick;
