@@ -165,6 +165,18 @@ export const PRESETS = {
     // déjà l'information, la renforcer fausserait la lecture des couleurs.
     diorama: { ...BASE, strength: 12, saturation: 1, tint: 0, vignette: 0.14, lightAmount: 0.35 },
   },
+  audit: {
+    label: 'audit',
+    palette: MODEL_PALETTE,
+    background: 0xf6f5f2,
+    post: false,
+    shape: null,
+    round: false,
+    boost: 1,
+    // Rouge : végétation haute posée au sol. Magenta : bâtiment enterré.
+    // Gris neutre : rien à redire — ce qui n'est pas la même chose que vérifié.
+    auditMode: true,
+  },
   peach: {
     label: 'peach',
     palette: PEACH_PALETTE,

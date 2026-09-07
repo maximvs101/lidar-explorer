@@ -6,6 +6,7 @@ import { PRESETS, getPreset } from './presets.js';
 import { DioramaRenderer } from './diorama.js';
 import { histogram } from '../analysis/classStats.js';
 import { TerrainGrid, heightStats } from '../analysis/terrain.js';
+import { WaterPlanarity, classContradictions, summarise } from '../analysis/audit.js';
 
 /**
  * Rendu du nuage avec niveau de détail piloté par la caméra.
@@ -52,6 +53,8 @@ export class Viewer {
     this.terrainSize = 3000;
     this.terrainStats = null;
     this._terrainBuiltAt = 0;
+    this.auditStats = null;
+    this._auditAt = 0;
     this.preset = getPreset('lecture');
     this.presetName = 'lecture';
     // Toutes les dalles partagent une seule origine de scene, celle de la
@@ -234,6 +237,32 @@ export class Viewer {
     return this.terrainStats;
   }
 
+  /**
+   * Passe d'audit sur tout ce qui est en scene.
+   *
+   * Le parcours est en O(points) : quelques millions de points a chaque appel,
+   * donc un intervalle minimal, et seulement quand le mode est actif.
+   */
+  runAudit({ minInterval = 2500, force = false } = {}) {
+    if (!this.terrain || !this.terrain.filled) return null;
+    const maintenant = performance.now();
+    if (!force && maintenant - this._auditAt < minInterval) return this.auditStats;
+
+    const contradictions = {
+      vegetationTropBasse: 0, batimentSousSol: 0, solEnLair: 0, testes: 0, sansSol: 0,
+    };
+    const eau = new WaterPlanarity({ cell: 20 });
+    for (const points of this.loaded.values()) {
+      const pos = points.geometry.getAttribute('position').array;
+      const cls = points.geometry.getAttribute('classification').array;
+      classContradictions(this.terrain, pos, cls, contradictions);
+      eau.addPoints(pos, cls);
+    }
+    this._auditAt = maintenant;
+    this.auditStats = summarise(contradictions, eau.report());
+    return this.auditStats;
+  }
+
   /** Statistiques de hauteur de la vegetation actuellement en scene. */
   canopyStats(codes = new Set([3, 4, 5])) {
     if (!this.terrain || !this.terrain.filled) return null;
@@ -306,7 +335,12 @@ export class Viewer {
     // La couleur par hauteur remplace la couleur par classe ; sans terrain
     // pret, on n'active rien plutot que de peindre du gris partout.
     this.materials.setHeightMode(Boolean(preset.heightMode), preset.heightMax ?? 30);
-    if (preset.heightMode) this.buildTerrain({ force: true });
+    this.materials.setAuditMode(Boolean(preset.auditMode));
+    if (preset.heightMode || preset.auditMode) {
+      this.buildTerrain({ force: true });
+      this.materials.setAuditMode(Boolean(preset.auditMode));
+    }
+    if (preset.auditMode) this.runAudit({ force: true });
 
     this.clipShape = preset.shape ?? null;
     if (this.clipShape) {
@@ -462,6 +496,7 @@ export class Viewer {
     this._removePlinth();
     this.terrain = null;
     this.terrainStats = null;
+    this.auditStats = null;
     this.materials.setTerrain(null);
     for (const id of [...this.loaded.keys()]) this.removeNode(id);
     this.pending.clear();
@@ -512,7 +547,10 @@ export class Viewer {
     // Le terrain se refige quand de nouveaux points de sol sont arrives ; la
     // methode porte son propre intervalle minimal, l'appeler a chaque image ne
     // coute donc rien la plupart du temps.
-    if (this.materials.shared.uHeightMode > 0.5) this.buildTerrain();
+    if (this.materials.shared.uHeightMode > 0.5 || this.materials.shared.uAuditMode > 0.5) {
+      this.buildTerrain();
+    }
+    if (this.materials.shared.uAuditMode > 0.5) this.runAudit();
 
     const selection = this.select();
     if (!selection) return null;

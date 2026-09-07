@@ -67,6 +67,7 @@ const VERTEX = /* glsl */ `
   uniform float uTerrainSize;
   uniform float uHeightMode;
   uniform float uHeightMax;
+  uniform float uAuditMode;
   // 0 = disque, 1 = carre. Un booleen suffit : la distance de Tchebychev
   // (max des ecarts) decoupe un carre la ou la norme euclidienne fait un cercle.
   uniform float uClipSquare;
@@ -101,6 +102,29 @@ const VERTEX = /* glsl */ `
     vec4 entry = texture2D(uPalette, vec2((classification + 0.5) / 256.0,
                                           (variante + 0.5) / VARIANTES));
     vColor = entry.rgb * (1.0 + uTint * (bruit(position.xy + 137.0) - 0.5));
+
+    // Mode audit : on ne peint en rouge que les points qui contredisent la
+    // definition de leur propre classe, et seulement la ou le sol est connu.
+    // Ailleurs, le gris dit « rien a redire », pas « verifie ».
+    if (uAuditMode > 0.5) {
+      vec2 uva = (position.xy - uTerrainMin) / uTerrainSize;
+      vec3 neutre = vec3(0.72, 0.71, 0.68);
+      if (uva.x < 0.0 || uva.x > 1.0 || uva.y < 0.0 || uva.y > 1.0) {
+        vColor = vec3(0.55, 0.55, 0.58);
+      } else {
+        float solA = texture2D(uTerrain, uva).r;
+        if (solA < -9000.0) {
+          vColor = vec3(0.55, 0.55, 0.58); // sol inconnu : non jugeable
+        } else {
+          float ha = position.z - solA;
+          vColor = neutre;
+          // Vegetation haute (5) sous 1 m : contredit sa strate.
+          if (abs(classification - 5.0) < 0.5 && ha < 1.0) vColor = vec3(0.90, 0.24, 0.24);
+          // Batiment (6) a plus d'un metre sous le terrain.
+          if (abs(classification - 6.0) < 0.5 && ha < -1.0) vColor = vec3(0.85, 0.30, 0.75);
+        }
+      }
+    }
 
     if (uHeightMode > 0.5) {
       vec2 uv = (position.xy - uTerrainMin) / uTerrainSize;
@@ -158,7 +182,7 @@ export class PointsMaterialPool {
     this.shared = {
       uScale: 1, uAttenuate: attenuate ? 1 : 0, uRound: round ? 1 : 0, uBoost: 1,
       uClipCenter: [0, 0], uClipRadius: 0, uClipSquare: 0, uTint: 0,
-      uHeightMode: 0, uHeightMax: 30,
+      uHeightMode: 0, uHeightMax: 30, uAuditMode: 0,
     };
   }
 
@@ -242,6 +266,7 @@ export class PointsMaterialPool {
         uTerrainSize: { value: 1 },
         uHeightMode: { value: this.shared.uHeightMode },
         uHeightMax: { value: this.shared.uHeightMax },
+        uAuditMode: { value: this.shared.uAuditMode },
         uTint: { value: this.shared.uTint },
       },
       vertexShader: VERTEX,
@@ -336,6 +361,12 @@ export class PointsMaterialPool {
     this._pushShared();
   }
 
+  /** Colore en rouge les points qui contredisent la definition de leur classe. */
+  setAuditMode(on) {
+    this.shared.uAuditMode = on && this.terrainTexture ? 1 : 0;
+    this._pushShared();
+  }
+
   /** Amplitude de la variation de teinte, 0 pour une couleur uniforme. */
   setTint(amount) {
     this.shared.uTint = amount;
@@ -354,6 +385,7 @@ export class PointsMaterialPool {
       material.uniforms.uTint.value = this.shared.uTint;
       material.uniforms.uHeightMode.value = this.shared.uHeightMode;
       material.uniforms.uHeightMax.value = this.shared.uHeightMax;
+      material.uniforms.uAuditMode.value = this.shared.uAuditMode;
       if (this.terrainTexture) {
         material.uniforms.uTerrain.value = this.terrainTexture;
         material.uniforms.uTerrainMin.value.set(this.terrainMin[0], this.terrainMin[1]);

@@ -525,6 +525,28 @@ setInterval(() => {
     ]);
   }
 
+  // Audit : des parts, pas des comptes bruts — mille points douteux sur dix
+  // millions ne pèsent pas comme sur vingt mille. Et « rien à redire » n'est
+  // pas « vérifié » : seul ce que le sol connu permet de juger est compté.
+  if (session && viewer.preset.auditMode) {
+    const a = viewer.auditStats;
+    const pct = (v) => (Number.isFinite(v) ? `${v.toFixed(2)} %` : '—');
+    const m = (v) => (Number.isFinite(v) ? `${v.toFixed(2)} m` : '—');
+    table(el.stats, a ? [
+      ['points jugeables', fmt(a.testes)],
+      ['— sol inconnu, non jugés', fmt(a.sansSol), a.sansSol > 0 ? 'warn' : ''],
+      ['végétation haute au sol', `${fmt(a.vegetation.count)} · ${pct(a.vegetation.share)}`,
+        a.vegetation.share > 1 ? 'warn' : ''],
+      ['bâtiment sous le terrain', `${fmt(a.batiment.count)} · ${pct(a.batiment.share)}`,
+        a.batiment.share > 1 ? 'warn' : ''],
+      ['mailles d’eau jugeables', fmt(a.eau.retenues ?? 0)],
+      ['— non horizontales', `${fmt(a.eau.suspectes ?? 0)} · ${pct(100 * (a.eau.ratio ?? NaN))}`,
+        a.eau.ratio > 0.1 ? 'err' : ''],
+      ['étendue max de l’eau', m(a.eau.etendueMax), a.eau.etendueMax > 0.5 ? 'err' : ''],
+      ['— seuil admis', m(a.eau.seuil)],
+    ] : [['audit', 'en cours…']]);
+  }
+
   el.hud.innerHTML = session
     ? `<b>${fmt(s.pointsInScene)}</b> pts · <b>${s.nodesInScene}</b> nœuds · ` +
       `<b>${viewer.tiles.size}</b> dalle${viewer.tiles.size > 1 ? 's' : ''}` +
