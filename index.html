@@ -33,6 +33,14 @@
              background: rgba(10, 13, 18, .82); border: 1px solid var(--line);
              font-size: 11px; color: var(--dim); pointer-events: none; }
       #hud b { color: var(--text); font-weight: 600; }
+      #progress { position: absolute; left: 8px; top: 8px; width: 190px; padding: 5px 9px;
+                  border-radius: 4px; background: rgba(10, 13, 18, .82);
+                  border: 1px solid var(--line); font-size: 11px; color: var(--dim);
+                  pointer-events: none; opacity: 0; transition: opacity .25s; }
+      #progress.show { opacity: 1; }
+      #progressbar { height: 3px; background: var(--accent); border-radius: 2px;
+                     width: 0; margin-bottom: 4px; transition: width .2s; }
+      #measureactions button { padding: 3px 8px; font-size: 11px; }
       #scale { position: absolute; right: 10px; bottom: 8px; padding: 5px 9px; border-radius: 4px;
                background: rgba(10, 13, 18, .82); border: 1px solid var(--line);
                font-size: 11px; color: var(--dim); pointer-events: none; display: none; }
@@ -148,6 +156,9 @@
 
       <h2>Mesure</h2>
       <div id="measureout"><span class="dim">—</span></div>
+      <p class="foot" id="measureactions" hidden>
+        <button id="measureclear">Effacer la mesure</button>
+      </p>
 
       <h2>Dalle</h2>
       <div id="tile"><span class="dim">aucun lieu sélectionné</span></div>
@@ -205,6 +216,7 @@
       <div id="stage">
         <canvas id="view"></canvas>
         <div id="hud">cliquez sur la carte pour choisir un lieu</div>
+        <div id="progress"><div id="progressbar"></div><span id="progresstext"></span></div>
         <div id="scale"><div id="scalebar"></div><span id="scaletext"></span></div>
       </div>
     </div>

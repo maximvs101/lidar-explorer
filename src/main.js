@@ -40,6 +40,11 @@ const el = {
   detailVal: document.getElementById('detailval'),
   measureBtn: document.getElementById('measure'),
   measureOut: document.getElementById('measureout'),
+  measureActions: document.getElementById('measureactions'),
+  measureClear: document.getElementById('measureclear'),
+  progress: document.getElementById('progress'),
+  progressBar: document.getElementById('progressbar'),
+  progressText: document.getElementById('progresstext'),
   exportBtn: document.getElementById('export'),
   exportScale: document.getElementById('exportscale'),
   exportSize: document.getElementById('exportsize'),
@@ -436,10 +441,11 @@ function setMeasuring(on) {
   el.measureBtn.classList.toggle('on', on);
   el.measureBtn.textContent = on ? 'Mesurer — actif' : 'Mesurer';
   document.getElementById('stage').classList.toggle('measuring', on);
+  // Quitter le mode de saisie ne doit PAS effacer la mesure : on en sort
+  // précisément pour naviguer autour sans risquer de poser un point de plus.
+  // L'effacement devient un geste explicite.
   if (!on) {
-    picks = [];
-    viewer.clearMeasure();
-    el.measureOut.innerHTML = '<span class="dim">—</span>';
+    if (picks.length === 0) el.measureOut.innerHTML = '<span class="dim">—</span>';
   } else {
     // Le mode change ce que fait le clic gauche : il faut le dire, sinon
     // l'utilisateur croit avoir cassé la rotation de la vue.
@@ -475,6 +481,15 @@ function renderMeasure() {
 
 el.measureBtn.addEventListener('click', () => setMeasuring(!measuring));
 
+el.measureClear.addEventListener('click', () => {
+  picks = [];
+  viewer.clearMeasure();
+  el.measureOut.innerHTML = measuring
+    ? '<span class="dim">cliquez un premier point</span>'
+    : '<span class="dim">—</span>';
+  el.measureActions.hidden = true;
+});
+
 /**
  * Distinguer le clic du glissement.
  *
@@ -507,6 +522,7 @@ vue.addEventListener('pointerup', (event) => {
   if (picks.length >= 2) picks = [];
   picks.push(point);
   viewer.showMeasure(picks);
+  el.measureActions.hidden = false;
   renderMeasure();
 });
 
@@ -675,8 +691,31 @@ function maybeExtend() {
   extendToNeighbours();
 }
 
+/**
+ * Où en est le chargement.
+ *
+ * Le nombre de points en scène ne dit rien à lui seul : il faut savoir s'il va
+ * encore monter. On rapporte donc le chargé au voulu, et la barre disparaît une
+ * fois à jour plutôt que de rester à 100 % — un indicateur qui ne bouge plus
+ * n'informe plus.
+ */
+function renderProgress() {
+  if (!session) { el.progress.className = ''; return; }
+  const p = viewer.progress();
+  if (p.done) {
+    el.progress.className = '';
+    return;
+  }
+  el.progress.className = 'show';
+  el.progressBar.style.width = `${Math.round(100 * p.ratio)} %`.replace(' ', '');
+  el.progressText.textContent =
+    `chargement ${Math.round(100 * p.ratio)} % · ${fmt(p.loaded)} / ${fmt(p.wanted)} pts` +
+    (p.pending > 0 ? ` · ${p.pending} en vol` : '');
+}
+
 setInterval(() => {
   const s = viewer.stats;
+  renderProgress();
   renderScale();
   maybeExtend();
   const sel = s.lastSelection;

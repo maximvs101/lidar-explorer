@@ -405,17 +405,15 @@ export class Viewer {
 
     const sphere = new THREE.SphereGeometry(1, 16, 12);
     this._measureGeometries += 1;
-    // Le rayon suit la distance a la camera : un marqueur de taille fixe dans
-    // le monde disparait de loin et devient enorme de pres.
-    const echelle = Math.max(this.camera.position.distanceTo(this.controls.target) * 0.006, 0.4);
     const matiere = new THREE.MeshBasicMaterial({ color: 0xff5b4a, depthTest: false });
     for (const p of points) {
       const m = new THREE.Mesh(sphere, matiere);
       m.position.copy(p);
-      m.scale.setScalar(echelle);
+      m.userData.marqueur = true;
       m.renderOrder = 11;
       this.measureGroup.add(m);
     }
+    this.updateMeasureScale();
 
     if (points.length >= 2) {
       const ligne = new THREE.BufferGeometry().setFromPoints([points[0], points[1]]);
@@ -427,6 +425,46 @@ export class Viewer {
       trait.renderOrder = 11;
       this.measureGroup.add(trait);
     }
+  }
+
+  /**
+   * Maintient les marqueurs a taille apparente constante.
+   *
+   * Une taille fixee dans le monde au moment de la pose devient minuscule des
+   * qu'on recule et enorme quand on s'approche. L'echelle est donc reprise a
+   * chaque image, et par marqueur : les deux extremites d'une longue mesure ne
+   * sont pas a la meme distance de l'oeil.
+   */
+  updateMeasureScale() {
+    for (const objet of this.measureGroup.children) {
+      if (!objet.userData.marqueur) continue;
+      const distance = this.camera.position.distanceTo(objet.position);
+      objet.scale.setScalar(Math.max(distance * 0.006, 0.15));
+    }
+  }
+
+  /**
+   * Avancement du chargement : ce qui est en scene rapporte a ce qui est voulu.
+   *
+   * `wanted` peut passer sous `loaded` le temps qu'une eviction suive un
+   * deplacement de camera, d'ou le bornage — une progression au-dela de 100 %
+   * n'apprendrait rien a personne.
+   */
+  progress() {
+    const selection = this.stats.lastSelection;
+    const loaded = this.stats.pointsInScene;
+    if (!selection) {
+      return { loaded, wanted: loaded, pending: 0, ratio: 1, done: true };
+    }
+    const wanted = selection.points;
+    const pending = this.pending.size;
+    return {
+      loaded,
+      wanted,
+      pending,
+      ratio: wanted > 0 ? Math.min(loaded / wanted, 1) : 1,
+      done: pending === 0 && loaded >= wanted,
+    };
   }
 
   clearMeasure() {
@@ -441,6 +479,7 @@ export class Viewer {
 
   /** Une seule voie de rendu, pour que tout le reste ignore le mode courant. */
   draw() {
+    this.updateMeasureScale();
     if (this.reliefOn) this.relief.render(this.scene, this.camera);
     else this.renderer.render(this.scene, this.camera);
   }
@@ -604,6 +643,7 @@ export class Viewer {
     this._raf = requestAnimationFrame(this._loop);
     if (!this.sized) return;
     this.controls.update();
+    this.updateMeasureScale();
     this.refresh();
     this.draw();
     this.stats.frames += 1;

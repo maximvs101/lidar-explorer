@@ -43,6 +43,15 @@ Le même bouton gauche fait tourner la vue et pose un point de mesure : seul un
 clic immobile pose un point, un glissement tourne toujours la caméra. La
 tolérance est de cinq pixels, personne ne cliquant parfaitement immobile.
 
+Quitter le mode mesure **n'efface pas** la mesure — on en sort justement pour
+tourner autour sans risquer de poser un point de plus. Les marqueurs gardent
+leur taille apparente quand on se déplace, et l'effacement est un geste
+explicite.
+
+Une barre en haut de la vue dit où en est le chargement, en points chargés
+rapportés aux points voulus. Elle disparaît une fois à jour : un indicateur qui
+ne bouge plus n'informe plus.
+
 ### Deux réglages qui changent tout
 
 - **Seuil de détail** — c'est le vrai levier de précision. L'abaisser fait
@@ -66,7 +75,7 @@ preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
   par point indexant une palette.
 - **Mesure dans la scène** — deux clics donnent distance 3D, distance
   horizontale, dénivelé, pente en pourcentage *et* en degrés, azimut, et les
-  altitudes en NGF-IGN69. Le point sous le curseur est retrouvé en lisant le
+  altitudes en NGF-IGN69. La mesure survit à la navigation. Le point sous le curseur est retrouvé en lisant le
   tampon de profondeur, ce qui coûte le même prix quel que soit le nombre de
   points et rend exactement ce que l'œil voit.
 - **Export d'image** jusqu'à quatre fois la résolution de l'écran. Les rayons
