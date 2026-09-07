@@ -68,7 +68,7 @@
                     border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px;
                     font: inherit; font-variant-numeric: tabular-nums; }
       #hfilterrow input[type=checkbox] { margin: 0; cursor: pointer; accent-color: var(--accent); }
-      #hfilterhint { margin: 0 0 8px; }
+      #hfilterhint, #roundhint { margin: 0 0 8px; }
       #sectionrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
                     margin: 2px 0 6px; font-size: 11px; color: var(--dim);
                     cursor: pointer; user-select: none; }
@@ -168,8 +168,9 @@
           <tr><td>deux points posés</td><td>ouvre la coupe le long du segment</td></tr>
         </table>
         <p class="foot">Le détail se charge selon l'endroit où vous regardez : approchez-vous
-          pour l'affiner, reculez pour couvrir plus large. Les dalles voisines viennent
-          d'elles-mêmes, sauf si vous décochez l'option sous « Chargement ».</p>
+          pour l'affiner, reculez pour couvrir plus large. L'exploration se limite à la dalle
+          choisie ; pour aller au-delà, cochez « charger les dalles voisines » sous
+          « Chargement ».</p>
       </details>
 
       <div id="notice"></div>
@@ -231,9 +232,13 @@
             <output id="pointsizeval">1,00</output>
           </label>
           <label id="roundrow">
-            <input id="round" type="checkbox">
+            <input id="round" type="checkbox" checked>
             <span>points ronds</span>
           </label>
+          <p class="foot" id="roundhint">Effet visible seulement sur les points plus larges
+            qu'un pixel : au réglage courant la plupart sont au plancher d'un pixel, où un
+            disque et un carré couvrent le même pixel. Mesuré : 1,6 % de pixels peints en
+            moins en rond.</p>
         </details>
       </section>
 
@@ -247,12 +252,13 @@
         <p class="foot" id="detailhint">Plus le seuil est bas, plus l'application descend
           dans l'octree : le nuage gagne en résolution et le nombre de points monte.</p>
         <label id="neighbourrow">
-          <input id="neighbours" type="checkbox" checked>
+          <input id="neighbours" type="checkbox">
           <span>charger les dalles voisines</span>
         </label>
-        <p class="foot" id="neighbourhint">Décocher s'en tient à la dalle choisie sur la carte :
-          moins de requêtes, une emprise qui ne bouge plus, et tout le budget de points
-          pour ce kilomètre carré.</p>
+        <p class="foot" id="neighbourhint">Décoché, l'explorateur s'en tient à la dalle choisie
+          sur la carte : moins de requêtes chez l'IGN, une emprise qui ne bouge plus sous une
+          mesure ou une coupe, et tout le budget de points pour ce kilomètre carré. Cocher
+          étend la vue aux huit dalles voisines à mesure qu'on se déplace.</p>
       </section>
 
       <section class="phase">

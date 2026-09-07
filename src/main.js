@@ -776,6 +776,13 @@ el.round.addEventListener('change', () => {
   viewer.materials.setRound(el.round.checked);
 });
 
+// L'état de départ vient du rendu, pas du balisage : la case était décochée
+// dans le HTML alors que les points étaient bel et bien ronds, si bien que le
+// premier clic les rendait carrés en donnant l'impression de faire l'inverse.
+// Deux endroits qui déclarent le même défaut finissent toujours par diverger.
+el.round.checked = viewer.materials.shared.uRound > 0.5;
+el.neighbours.dispatchEvent(new Event('change'));
+
 el.pointSize.addEventListener('input', () => {
   const factor = Number(el.pointSize.value);
   viewer.setPointScale(factor);

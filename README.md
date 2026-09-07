@@ -3,8 +3,6 @@
 Explorer, mesurer et couper le nuage de points LiDAR HD de l'IGN, directement
 dans le navigateur.
 
-**→ [maximvs101.github.io/lidar-explorer](https://maximvs101.github.io/lidar-explorer/)**
-
 Les dalles sont diffusées au format **COPC**, le serveur de la Géoplateforme
 honore les requêtes `Range` et renvoie `access-control-allow-origin: *` : la page
 lit donc les données **directement chez l'IGN**, sans backend ni copie locale.
@@ -28,6 +26,10 @@ npm run build
    viennent d'elles-mêmes — une case permet de s'en tenir à la dalle choisie.
 3. **Naviguer**, puis choisir un preset ou une source de couleur.
 
+L'exploration se limite à la dalle choisie. Cocher « charger les dalles
+voisines », sous **Chargement**, étend la vue aux huit dalles autour à mesure
+qu'on se déplace — au prix de requêtes supplémentaires chez l'IGN.
+
 | geste | effet |
 |---|---|
 | clic gauche + glisser | faire tourner la vue autour du point visé |
@@ -50,7 +52,9 @@ scène.
 - **Sélection par la carte**, index des dalles via le WFS public, métadonnées
   d'acquisition affichées : dates, capteur, procédé de classement.
 - **Niveau de détail piloté par la caméra**, plafonné en nombre de points, avec
-  éviction des nœuds hors champ et chargement des dalles voisines.
+  éviction des nœuds hors champ. L'extension aux dalles voisines est une option,
+  décochée par défaut : chaque dalle supplémentaire est du trafic en plus sur un
+  service public qui plafonne à une dizaine de requêtes simultanées.
 - **Cinq sources de couleur** — classe, intensité, nombre de retours, bande de
   vol, hauteur au-dessus du sol — et trois presets (`lecture`, `relief`,
   `canopée`) qui règlent d'un clic nuancier, fond et ombrage.
@@ -108,6 +112,10 @@ dépend de WebGL et se vérifie dans le navigateur, en mutant dans les deux sens
 un contrôle qui ne peut pas échouer ne prouve rien.
 
 ## Données et licences
+
+Il n'y a pas d'instance publique : chaque visiteur d'une page hébergée
+interrogerait la Géoplateforme depuis son propre navigateur, et sans clé il n'y
+a aucun levier pour brider ce trafic. L'outil se lance donc localement.
 
 Tout vient de l'**IGN — Géoplateforme**, sous
 [Licence Ouverte / Open Licence 2.0 (Etalab)](https://www.etalab.gouv.fr/licence-ouverte-open-licence/),
