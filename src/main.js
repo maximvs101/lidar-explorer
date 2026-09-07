@@ -34,6 +34,9 @@ const el = {
   pointSizeVal: document.getElementById('pointsizeval'),
   detail: document.getElementById('detail'),
   detailVal: document.getElementById('detailval'),
+  exportBtn: document.getElementById('export'),
+  exportScale: document.getElementById('exportscale'),
+  exportSize: document.getElementById('exportsize'),
 };
 
 const fmtScale = (n) => n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -260,6 +263,7 @@ async function pick(point) {
   hideNotice();
   clearLog();
   el.load.disabled = true;
+  el.exportBtn.disabled = true;
   selected = null;
   session = null;
   viewer.clear();
@@ -328,6 +332,8 @@ async function loadSelected() {
     extendToNeighbours();
 
     table(el.stats, levels.map((l) => [`niveau ${l.level}`, `${fmt(l.points)} pts · ${mo(l.bytes)}`]));
+    el.exportBtn.disabled = false;
+    showExportSize();
     log('navigation libre — le détail se charge selon la caméra', 'ok');
     window.__session = session;
   } catch (error) {
@@ -351,6 +357,39 @@ el.clear.addEventListener('click', async () => {
   log('cache vidé', 'warn');
 });
 el.load.addEventListener('click', () => loadSelected());
+
+/** Taille de l'image qui sera produite, pour que le choix soit informé. */
+function showExportSize() {
+  const canvas = viewer.renderer.domElement;
+  const scale = Number(el.exportScale.value);
+  el.exportSize.textContent =
+    canvas.width > 1 ? `${Math.round(canvas.width * scale)} × ${Math.round(canvas.height * scale)} px` : '';
+}
+el.exportScale.addEventListener('change', showExportSize);
+
+el.exportBtn.addEventListener('click', async () => {
+  el.exportBtn.disabled = true;
+  const libelle = el.exportBtn.textContent;
+  el.exportBtn.textContent = 'rendu…';
+  try {
+    const { blob, width, height } = await viewer.capture({ scale: Number(el.exportScale.value) });
+    const nom = viewer.captureName('png');
+    const url = URL.createObjectURL(blob);
+    const lien = document.createElement('a');
+    lien.href = url;
+    lien.download = nom;
+    lien.click();
+    // Laisser au navigateur le temps de lire le blob avant de le libérer.
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    log(`image exportée : ${nom} — ${width} × ${height}, ${(blob.size / 1e6).toFixed(1)} Mo`, 'ok');
+    window.__lastExport = { nom, width, height, size: blob.size };
+  } catch (error) {
+    log(`export impossible : ${error.message}`, 'err');
+  } finally {
+    el.exportBtn.textContent = libelle;
+    el.exportBtn.disabled = false;
+  }
+});
 
 function setPreset(name) {
   presetName = PRESETS[name] ? name : 'lecture';

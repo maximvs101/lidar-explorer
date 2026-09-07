@@ -472,6 +472,62 @@ export class Viewer {
   }
 
   /**
+   * Rend une image a une resolution superieure a celle de l'ecran.
+   *
+   * Le piege : plusieurs effets sont exprimes **en texels**, pas en metres.
+   * Doubler la resolution sans y toucher divise par deux leur portee relative —
+   * l'ombrage cesse de creuser, le flou de bord disparait — et l'image exportee
+   * ne ressemble plus a ce qu'on voyait. On met donc leur rayon a l'echelle du
+   * facteur d'agrandissement, puis on restaure tout.
+   */
+  async capture({ scale = 2, type = 'image/png' } = {}) {
+    const canvas = this.renderer.domElement;
+    const largeur = canvas.width;
+    const hauteur = canvas.height;
+    if (largeur < 2 || hauteur < 2) throw new Error('vue non dimensionnee');
+
+    const cible = { w: Math.round(largeur * scale), h: Math.round(hauteur * scale) };
+    const ratioPixel = this.renderer.getPixelRatio();
+    const reglages = { ...this.diorama.settings };
+
+    try {
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(cible.w, cible.h, false);
+      this.camera.aspect = cible.w / cible.h;
+      this.camera.updateProjectionMatrix();
+      this.materials.setProjection({
+        viewportHeight: cible.h,
+        fovRadians: (this.camera.fov * Math.PI) / 180,
+      });
+      this.diorama.setSize(cible.w, cible.h);
+      this.diorama.set({
+        radius: reglages.radius * scale,
+        lightSpread: reglages.lightSpread * scale,
+        tiltAmount: reglages.tiltAmount * scale,
+      });
+
+      this.draw();
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('capture vide'))), type);
+      });
+      return { blob, width: cible.w, height: cible.h };
+    } finally {
+      this.diorama.set(reglages);
+      this.renderer.setPixelRatio(ratioPixel);
+      this.resize();
+      this.draw();
+    }
+  }
+
+  /** Nom de fichier lisible : lieu, style, date. */
+  captureName(extension = 'png') {
+    const premiere = [...this.tiles.values()][0];
+    const nom = premiere?.tile?.header ? (premiere.tile.url.match(/LHD_FXX_(\d{4}_\d{4})/)?.[1] ?? 'lidar') : 'lidar';
+    const jour = new Date().toISOString().slice(0, 10);
+    return `lidar-hd_${nom}_${this.presetName}_${jour}.${extension}`;
+  }
+
+  /**
    * Mesure de rendu indépendante de requestAnimationFrame, qui est gelé dès que
    * l'onglet passe en arrière-plan et rapporte alors zéro image par seconde
    * alors que le rendu fonctionne.

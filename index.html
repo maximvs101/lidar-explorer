@@ -48,6 +48,12 @@
       #sizerow output, #detailrow output { min-width: 3.6em; text-align: right;
                         color: var(--text); font-variant-numeric: tabular-nums; }
       #detailhint { margin: 0 0 8px; }
+      #exportrow { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px;
+                   font-size: 11px; color: var(--dim); }
+      #exportrow select { background: var(--panel); color: var(--text);
+                          border: 1px solid var(--line); border-radius: 4px;
+                          padding: 2px 5px; font: inherit; }
+      #exportrow output { font-variant-numeric: tabular-nums; }
       #modes button.on { border-color: var(--accent); color: var(--accent); }
       .cls { display: flex; align-items: center; gap: 7px; margin: 2px 0; font-size: 12px;
              cursor: pointer; user-select: none; }
@@ -94,8 +100,19 @@
 
       <div>
         <button id="load" disabled>Charger le nuage</button>
+        <button id="export" disabled>Exporter l'image</button>
         <button id="clear">Vider le cache</button>
       </div>
+      <label id="exportrow">
+        <span>résolution</span>
+        <select id="exportscale">
+          <option value="1">écran</option>
+          <option value="2" selected>×2</option>
+          <option value="3">×3</option>
+          <option value="4">×4</option>
+        </select>
+        <output id="exportsize"></output>
+      </label>
       <div id="log"></div>
 
       <h2>Dalle</h2>
