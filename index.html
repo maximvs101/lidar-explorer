@@ -64,6 +64,12 @@
       #exportrow output { font-variant-numeric: tabular-nums; }
       #modes button.on, button.on { border-color: var(--accent); color: var(--accent); }
       #stage.measuring { cursor: crosshair; }
+      #aide { margin: 0 0 12px; font-size: 12px; }
+      #aide summary { cursor: pointer; color: var(--accent); user-select: none; }
+      #aide summary:hover { text-decoration: underline; }
+      table.aide { margin: 8px 0 4px; font-size: 11px; }
+      table.aide td:first-child { color: var(--text); white-space: nowrap; padding-right: 12px; }
+      table.aide td:last-child { color: var(--dim); }
       .cls { display: flex; align-items: center; gap: 7px; margin: 2px 0; font-size: 12px;
              cursor: pointer; user-select: none; }
       .cls input { margin: 0; cursor: pointer; }
@@ -107,13 +113,26 @@
       <h1>Explorateur LiDAR HD</h1>
       <p class="sub">Cliquez sur la carte pour choisir un lieu. Les données sont lues directement chez l'IGN.</p>
 
+      <details id="aide">
+        <summary>Comment s'en servir</summary>
+        <table class="aide">
+          <tr><td>clic gauche + glisser</td><td>faire tourner la vue</td></tr>
+          <tr><td>clic droit + glisser</td><td>déplacer la vue latéralement</td></tr>
+          <tr><td>molette</td><td>avancer et reculer</td></tr>
+          <tr><td>clic gauche sans bouger</td><td>poser un point, en mode mesure</td></tr>
+          <tr><td>Échap</td><td>quitter le mode mesure</td></tr>
+        </table>
+        <p class="foot">Le détail se charge selon l'endroit où vous regardez : approchez-vous
+          pour l'affiner, reculez pour couvrir plus large. Les dalles voisines viennent
+          d'elles-mêmes.</p>
+      </details>
+
       <div id="notice"></div>
 
       <div>
         <button id="load" disabled>Charger le nuage</button>
         <button id="export" disabled>Exporter l'image</button>
         <button id="measure" disabled>Mesurer</button>
-        <button id="clear">Vider le cache</button>
       </div>
       <label id="exportrow">
         <span>résolution</span>
@@ -133,7 +152,7 @@
       <h2>Dalle</h2>
       <div id="tile"><span class="dim">aucun lieu sélectionné</span></div>
 
-      <h2>Classes</h2>
+      <h2>Affichage</h2>
       <div id="modes"></div>
       <label id="sizerow">
         <span>taille des points</span>
@@ -176,6 +195,10 @@
 
       <h2>Compteurs</h2>
       <div id="stats"><span class="dim">—</span></div>
+
+      <p class="foot" style="margin-top:14px">
+        <button id="clear">Vider le cache</button>
+      </p>
     </div>
     <div id="right">
       <div id="map"></div>

@@ -18,8 +18,42 @@ npm test
 npm run build
 ```
 
-Cliquer sur la carte pour choisir un lieu, puis « Charger le nuage ». Le détail
-se raffine selon la caméra, et les dalles voisines se chargent au déplacement.
+## Prise en main
+
+1. **Cliquer sur la carte** pour choisir un lieu. Les rectangles bleus montrent
+   les dalles disponibles, à partir du zoom 12. Un endroit sans dalle publiée le
+   dit explicitement plutôt que d'ouvrir une scène vide.
+2. **« Charger le nuage »**. Le niveau grossier apparaît en moins d'une seconde,
+   le détail se raffine ensuite selon l'endroit où vous regardez, et les dalles
+   voisines viennent d'elles-mêmes quand vous vous déplacez.
+3. **Naviguer**, puis choisir un preset ou une source de couleur selon ce que
+   vous cherchez à voir.
+
+### Se déplacer dans la scène
+
+| geste | effet |
+|---|---|
+| clic gauche + glisser | faire tourner la vue autour du point visé |
+| clic droit + glisser | déplacer la vue latéralement |
+| molette | avancer et reculer |
+| clic gauche **sans bouger** | poser un point, en mode mesure |
+| `Échap` | quitter le mode mesure |
+
+Le même bouton gauche fait tourner la vue et pose un point de mesure : seul un
+clic immobile pose un point, un glissement tourne toujours la caméra. La
+tolérance est de cinq pixels, personne ne cliquant parfaitement immobile.
+
+### Deux réglages qui changent tout
+
+- **Seuil de détail** — c'est le vrai levier de précision. L'abaisser fait
+  descendre plus bas dans l'octree : de 3 px à 0,8 px, le nombre de points
+  triple. En dessous, c'est le plafond de points qui limite, pas le seuil.
+- **Taille des points** — la référence 1 vaut l'espacement du niveau affiché :
+  deux points voisins s'y touchent tout juste. Au-delà on gagne une surface
+  pleine en perdant du détail, ce qui va contre l'intérêt de la donnée.
+
+Ces réglages, comme les filtres de classe, sont conservés quand on change de
+preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
 
 ## Ce que ça fait
 

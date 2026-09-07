@@ -53,6 +53,9 @@ let presetName = 'lecture';
 /** Classes masquées, partagées entre la légende et les boutons de préréglage. */
 const hidden = new Set();
 
+/** Codes présents dans la légende affichée, pour ne la rebâtir qu'au besoin. */
+let legendSignature = '';
+
 /** Filtres rapides de classes — sans rapport avec les presets d'affichage. */
 const CLASS_FILTERS = {
   tout: [],
@@ -79,22 +82,39 @@ function renderLegend() {
     return;
   }
   const rows = shares(counts);
-  el.legend.innerHTML = rows
-    .map((r) => {
-      // Une entrée peut être une liste de couleurs : la pastille montre la
-      // première, sans quoi elle afficherait « rgb(255,200,87,233,114,76…) ».
-      const entree = PRESETS[presetName].palette[r.code] ?? [90, 90, 95];
-      const rgb = Array.isArray(entree[0]) ? entree[0] : entree;
-      const off = hidden.has(r.code) ? ' off' : '';
-      return (
-        `<label class="cls${off}"><input type="checkbox" data-code="${r.code}"` +
-        `${hidden.has(r.code) ? '' : ' checked'}>` +
-        `<span class="sw" style="background:rgb(${rgb.join(',')})"></span>` +
-        `<span class="nm">${r.code} ${className(r.code)}</span>` +
-        `<span class="ct">${fmt(r.count)} · ${r.share.toFixed(1)} %</span></label>`
-      );
-    })
-    .join('');
+
+  // La légende se rafraîchit deux fois par seconde. Réécrire le HTML à chaque
+  // fois remplacerait les cases à cocher sous le curseur : un clic tombant
+  // pendant la reconstruction viserait un élément déjà détaché du document.
+  // On ne reconstruit donc la structure que si les classes changent, et on se
+  // contente sinon de mettre les compteurs à jour.
+  const signature = rows.map((r) => r.code).join(',') + '|' + presetName;
+  if (signature !== legendSignature) {
+    legendSignature = signature;
+    el.legend.innerHTML = rows
+      .map((r) => {
+        const entree = PRESETS[presetName].palette[r.code] ?? [90, 90, 95];
+        const rgb = Array.isArray(entree[0]) ? entree[0] : entree;
+        return (
+          `<label class="cls" data-row="${r.code}"><input type="checkbox" data-code="${r.code}">` +
+          `<span class="sw" style="background:rgb(${rgb.join(',')})"></span>` +
+          `<span class="nm">${r.code} ${className(r.code)}</span>` +
+          `<span class="ct"></span></label>`
+        );
+      })
+      .join('');
+  }
+  for (const r of rows) {
+    const ligne = el.legend.querySelector(`[data-row="${r.code}"]`);
+    if (!ligne) continue;
+    const masquee = hidden.has(r.code);
+    ligne.classList.toggle('off', masquee);
+    const boite = ligne.querySelector('input');
+    // Ne pas toucher à la case si elle est déjà dans le bon état : la réécrire
+    // sous un curseur en train de cliquer annulerait le clic.
+    if (boite.checked === masquee) boite.checked = !masquee;
+    ligne.querySelector('.ct').textContent = `${fmt(r.count)} · ${r.share.toFixed(1)} %`;
+  }
   // En mode hauteur, les pastilles ne décrivent plus ce qui est à l'écran : la
   // couleur vient de la hauteur au-dessus du sol. Le dire, sinon la légende
   // affirme quelque chose de faux.
@@ -117,12 +137,34 @@ function applyHidden() {
 const fmt = (n) => Math.round(n).toLocaleString('fr-FR');
 const mo = (n) => `${(n / 1e6).toFixed(2)} Mo`;
 
+const MAX_LIGNES_JOURNAL = 6;
+
 const log = (message, kind = '') => {
   const div = document.createElement('div');
   div.className = kind;
   div.textContent = message;
   el.log.appendChild(div);
+  // Le journal est une marge, pas le contenu : au-delà de quelques lignes il
+  // repousse hors de l'écran ce qu'on est venu lire.
+  while (el.log.children.length > MAX_LIGNES_JOURNAL) el.log.firstChild.remove();
 };
+
+/**
+ * Message qui se met à jour au lieu de s'empiler.
+ * Les dalles voisines arrivent une par une ; en faire une ligne chacune noyait
+ * le panneau sous dix entrées disant toutes la même chose.
+ */
+function logCompteur(cle, texte, kind = 'dim') {
+  let div = el.log.querySelector(`[data-cle="${cle}"]`);
+  if (!div) {
+    div = document.createElement('div');
+    div.dataset.cle = cle;
+    div.className = kind;
+    el.log.appendChild(div);
+    while (el.log.children.length > MAX_LIGNES_JOURNAL) el.log.firstChild.remove();
+  }
+  div.textContent = texte;
+}
 const clearLog = () => { el.log.innerHTML = ''; };
 const notice = (html, kind = '') => { el.notice.className = `show ${kind}`; el.notice.innerHTML = html; };
 const hideNotice = () => { el.notice.className = ''; };
@@ -217,6 +259,8 @@ async function serveNodes(requests) {
  * elle a l'avantage de ne pas s'effondrer quand la camera regarde a l'horizon,
  * ou la projection exacte du frustum au sol part a l'infini.
  */
+let voisines = 0;
+
 async function extendToNeighbours() {
   if (!session || !viewer.sceneOrigin || extendToNeighbours.busy) return;
   extendToNeighbours.busy = true;
@@ -248,7 +292,8 @@ async function extendToNeighbours() {
       const { nodes } = await loader.hierarchy(opened, { maxLevel: Infinity });
       if (!session) return;
       viewer.addTile(opened, nodes);
-      log(`dalle voisine ajoutée : ${descriptor.name ?? descriptor.url.slice(-28)}`, 'dim');
+      voisines += 1;
+      logCompteur('voisines', `${voisines} dalle${voisines > 1 ? 's' : ''} voisine${voisines > 1 ? 's' : ''} ajoutée${voisines > 1 ? 's' : ''}`);
     }
   } catch (error) {
     log(`voisines indisponibles : ${error.message}`, 'warn');
@@ -286,6 +331,7 @@ async function pick(point) {
   selected = null;
   session = null;
   viewer.clear();
+  legendSignature = '';
   el.checks.innerHTML = '<span class="dim">—</span>';
   el.stats.innerHTML = '<span class="dim">—</span>';
 
@@ -333,6 +379,7 @@ async function pick(point) {
 async function loadSelected() {
   if (!selected) return;
   el.load.disabled = true;
+  el.load.textContent = 'Chargement…';
   clearLog();
   const started = performance.now();
   await makeLoader();
@@ -346,6 +393,7 @@ async function loadSelected() {
     const { nodes, levels, pagesRead } = await loader.hierarchy(tile, { maxLevel: Infinity });
     log(`${pagesRead} page(s) · ${fmt(nodes.length)} nœuds · ${fmt(nodes.reduce((a, n) => a + n.pointCount, 0))} pts disponibles`);
 
+    voisines = 0;
     session = { tile, started, firstPaintMs: null };
     viewer.setTile(tile, nodes);
     extendToNeighbours();
@@ -361,6 +409,7 @@ async function loadSelected() {
     notice(`<b>Le chargement a échoué.</b><br>${error.message}`, 'miss');
   } finally {
     el.load.disabled = false;
+    el.load.textContent = 'Charger le nuage';
   }
 }
 
@@ -385,13 +434,18 @@ let picks = [];
 function setMeasuring(on) {
   measuring = on;
   el.measureBtn.classList.toggle('on', on);
+  el.measureBtn.textContent = on ? 'Mesurer — actif' : 'Mesurer';
   document.getElementById('stage').classList.toggle('measuring', on);
   if (!on) {
     picks = [];
     viewer.clearMeasure();
     el.measureOut.innerHTML = '<span class="dim">—</span>';
   } else {
-    el.measureOut.innerHTML = '<span class="dim">cliquez un premier point</span>';
+    // Le mode change ce que fait le clic gauche : il faut le dire, sinon
+    // l'utilisateur croit avoir cassé la rotation de la vue.
+    el.measureOut.innerHTML =
+      '<span class="dim">cliquez un premier point — glisser fait toujours ' +
+      'tourner la vue, seul un clic immobile pose un point. Échap pour sortir.</span>';
   }
 }
 
@@ -421,11 +475,33 @@ function renderMeasure() {
 
 el.measureBtn.addEventListener('click', () => setMeasuring(!measuring));
 
-document.getElementById('view').addEventListener('click', (event) => {
+/**
+ * Distinguer le clic du glissement.
+ *
+ * Le même bouton gauche fait tourner la vue et pose un point, et le navigateur
+ * émet un `click` même après un déplacement : sans cette distinction, chaque
+ * rotation de la caméra posait un point. On compare donc la position d'appui à
+ * celle du relâchement, avec une tolérance de quelques pixels — personne ne
+ * clique parfaitement immobile.
+ */
+const CLIC_TOLERANCE = 5;
+let appui = null;
+const vue = document.getElementById('view');
+
+vue.addEventListener('pointerdown', (event) => {
+  appui = event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+});
+
+vue.addEventListener('pointerup', (event) => {
+  const depart = appui;
+  appui = null;
+  if (!depart || event.button !== 0) return;
+  if (Math.hypot(event.clientX - depart.x, event.clientY - depart.y) > CLIC_TOLERANCE) return;
   if (!measuring || !session) return;
+
   const point = viewer.pickAt(event.clientX, event.clientY);
   if (!point) {
-    el.measureOut.innerHTML = '<span class="dim">aucun point à cet endroit</span>';
+    el.measureOut.innerHTML = '<span class="dim">aucun point à cet endroit — visez la surface</span>';
     return;
   }
   if (picks.length >= 2) picks = [];
@@ -434,7 +510,15 @@ document.getElementById('view').addEventListener('click', (event) => {
   renderMeasure();
 });
 
+// Échap sort du mode mesure : c'est le réflexe, et le bouton est loin du curseur.
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && measuring) setMeasuring(false);
+});
+
 el.clear.addEventListener('click', async () => {
+  // Destructif et sans intérêt courant : tout devra être retéléchargé, et la
+  // Géoplateforme plafonne les requêtes. Une confirmation n'est pas de trop.
+  if (!window.confirm('Vider le cache ? Les dalles déjà lues devront être retéléchargées.')) return;
   await (await makeLoader()).cache?.clear();
   log('cache vidé', 'warn');
 });
