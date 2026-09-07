@@ -140,6 +140,20 @@ d'où la somme quadratique ; une distance cumule ses deux extrémités, d'où le
 facteur √2. L'espacement retenu est celui du niveau réellement affiché à
 l'endroit visé, et il se resserre quand on s'approche.
 
+## Servir depuis un sous-chemin
+
+Le build reference ses ressources en chemin absolu tant qu'aucune `base` n'est
+donnée à Vite. Le défaut est **latent** : invisible à la racine d'un domaine, il
+ne se manifeste qu'au premier hébergement sous un sous-chemin, où la page se
+charge blanche sans rien dans la console qui en désigne la cause.
+
+`BASE_PATH` règle ça, mais sous Git Bash il faut le protéger par
+`MSYS_NO_PATHCONV=1` : sans quoi le shell convertit `/lidar-explorer/` en chemin
+Windows, et le build sort `/Program Files/Git/lidar-explorer/assets/…`.
+
+Vérifié en servant réellement le `dist` sous `/lidar-explorer/` : 1 074 300
+points décodés, worker et WASM chargés depuis le chemin de base, aucune erreur.
+
 ## Pièges rencontrés
 
 Ceux qui ont coûté du temps, et qu'aucun message d'erreur n'annonçait.

@@ -113,9 +113,11 @@ un contrôle qui ne peut pas échouer ne prouve rien.
 
 ## Données et licences
 
-Il n'y a pas d'instance publique : chaque visiteur d'une page hébergée
-interrogerait la Géoplateforme depuis son propre navigateur, et sans clé il n'y
-a aucun levier pour brider ce trafic. L'outil se lance donc localement.
+**Il n'y a pas d'instance publique, et c'est délibéré.** Chaque visiteur d'une
+page hébergée interrogerait la Géoplateforme depuis son propre navigateur ;
+comme le service est ouvert sans clé, rien ne permettrait d'en brider le
+trafic — ni de le mesurer. L'outil se lance donc localement, avec
+`npm run dev`, et chacun n'engage que ses propres requêtes.
 
 Tout vient de l'**IGN — Géoplateforme**, sous
 [Licence Ouverte / Open Licence 2.0 (Etalab)](https://www.etalab.gouv.fr/licence-ouverte-open-licence/),
