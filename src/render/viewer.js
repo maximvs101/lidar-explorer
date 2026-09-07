@@ -180,7 +180,7 @@ export class Viewer {
   }
 
   /** Ajoute les points d'un noeud decode, repere par son identifiant global. */
-  addNode({ uid, tileKey, node }, positions, classification) {
+  addNode({ uid, tileKey, node }, positions, classification, extras = {}) {
     this.pending.delete(uid);
     if (this.loaded.has(uid)) return;
 
@@ -189,6 +189,11 @@ export class Viewer {
     // La classification reste sur 1 octet : le GPU la convertit en float à la
     // lecture, et c'est elle qui indexe la palette. Pas de tampon de couleur.
     geometry.setAttribute('classification', new THREE.BufferAttribute(classification, 1));
+    // Attributs facultatifs : le rendu retombe sur la couleur de classe s'ils
+    // manquent, plutot que d'echouer a compiler faute d'attribut declare.
+    if (extras.intensity) geometry.setAttribute('intensity', new THREE.BufferAttribute(extras.intensity, 1));
+    if (extras.returns) geometry.setAttribute('returns', new THREE.BufferAttribute(extras.returns, 1));
+    if (extras.source) geometry.setAttribute('source', new THREE.BufferAttribute(extras.source, 1));
 
     const entry = this.tiles.get(tileKey);
     const spacing = entry ? entry.tile.header.spacing / 2 ** node.key.level : 0.6;
@@ -261,6 +266,33 @@ export class Viewer {
     this._auditAt = maintenant;
     this.auditStats = summarise(contradictions, eau.report());
     return this.auditStats;
+  }
+
+  /**
+   * Regle les bornes d'intensite sur les centiles de ce qui est charge.
+   *
+   * Une plage fixe ne vaudrait que pour la zone ou elle a ete mesuree : la
+   * reflectance depend du capteur, de la hauteur de vol et des materiaux. On
+   * borne sur les centiles 2 et 98 plutot que sur le min et le max, qu'un seul
+   * echo aberrant suffirait a etirer jusqu'a aplatir tout le reste.
+   */
+  autoIntensityRange({ sample = 40000 } = {}) {
+    const valeurs = [];
+    for (const points of this.loaded.values()) {
+      const attr = points.geometry.getAttribute('intensity');
+      if (!attr) continue;
+      const a = attr.array;
+      const pas = Math.max(1, Math.floor(a.length / (sample / Math.max(this.loaded.size, 1))));
+      for (let i = 0; i < a.length; i += pas) valeurs.push(a[i]);
+    }
+    if (valeurs.length < 50) return null;
+    valeurs.sort((x, y) => x - y);
+    const at = (f) => valeurs[Math.min(valeurs.length - 1, Math.floor(f * valeurs.length))];
+    const bas = at(0.02);
+    const haut = at(0.98);
+    if (!(haut > bas)) return null;
+    this.materials.setIntensityRange(bas, haut);
+    return { low: bas, high: haut, sampled: valeurs.length };
   }
 
   /** Statistiques de hauteur de la vegetation actuellement en scene. */
@@ -337,13 +369,13 @@ export class Viewer {
 
     // La couleur par hauteur remplace la couleur par classe ; sans terrain
     // pret, on n'active rien plutot que de peindre du gris partout.
-    this.materials.setHeightMode(Boolean(preset.heightMode), preset.heightMax ?? 30);
-    this.materials.setAuditMode(Boolean(preset.auditMode));
-    if (preset.heightMode || preset.auditMode) {
-      this.buildTerrain({ force: true });
-      this.materials.setAuditMode(Boolean(preset.auditMode));
-    }
-    if (preset.auditMode) this.runAudit({ force: true });
+    // Un seul aiguillage : le preset nomme sa source de couleur.
+    const mode = preset.colorMode ?? (preset.heightMode ? 'hauteur' : preset.auditMode ? 'audit' : 'classe');
+    this.materials.setHeightMode(mode === 'hauteur', preset.heightMax ?? 30);
+    if (mode === 'hauteur' || mode === 'audit') this.buildTerrain({ force: true });
+    this.materials.setColorMode(mode);
+    if (mode === 'audit') this.runAudit({ force: true });
+    if (mode === 'intensite') this.autoIntensityRange();
 
     this.clipShape = preset.shape ?? null;
     if (this.clipShape) {

@@ -64,6 +64,13 @@ function decodeNode(L, { bytes, pointFormat, pointLength, pointCount, scale, off
   const positions = new Float32Array(pointCount * 3);
   const classification = new Uint8Array(pointCount);
   const intensity = new Uint16Array(pointCount);
+  // L'octet 14 du format 6 porte deja le numero de retour sur ses 4 bits bas et
+  // le nombre total de retours sur les 4 hauts : on le recopie tel quel, le
+  // desassemblage se fera au rendu.
+  const returns = new Uint8Array(pointCount);
+  // Identifiant de bande de vol : plusieurs passes se recouvrent, et c'est ce
+  // qui explique une densite trois fois superieure a celle annoncee.
+  const source = new Uint16Array(pointCount);
 
   const [sx, sy, sz] = scale;
   const [ox, oy, oz] = offset;
@@ -77,13 +84,15 @@ function decodeNode(L, { bytes, pointFormat, pointLength, pointCount, scale, off
       positions[i * 3 + 1] = heap.getInt32(pointPtr + 4, true) * sy + oy - gy;
       positions[i * 3 + 2] = heap.getInt32(pointPtr + 8, true) * sz + oz - gz;
       intensity[i] = heap.getUint16(pointPtr + 12, true);
+      returns[i] = heap.getUint8(pointPtr + 14);
       classification[i] = heap.getUint8(pointPtr + 16);
+      source[i] = heap.getUint16(pointPtr + 20, true);
     }
   } finally {
     decoder.delete();
   }
 
-  return { positions, classification, intensity };
+  return { positions, classification, intensity, returns, source };
 }
 
 self.onmessage = async (event) => {
@@ -91,7 +100,7 @@ self.onmessage = async (event) => {
   try {
     const L = await ensureLazPerf();
     const started = performance.now();
-    const { positions, classification, intensity } = decodeNode(L, payload);
+    const { positions, classification, intensity, returns, source } = decodeNode(L, payload);
     self.postMessage(
       {
         id,
@@ -99,11 +108,13 @@ self.onmessage = async (event) => {
         positions,
         classification,
         intensity,
+        returns,
+        source,
         pointCount: payload.pointCount,
         ms: performance.now() - started,
         heapRebinds,
       },
-      [positions.buffer, classification.buffer, intensity.buffer],
+      [positions.buffer, classification.buffer, intensity.buffer, returns.buffer, source.buffer],
     );
   } catch (error) {
     self.postMessage({ id, ok: false, error: error?.message ?? String(error) });

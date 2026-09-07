@@ -48,6 +48,11 @@
       #sizerow output, #detailrow output { min-width: 3.6em; text-align: right;
                         color: var(--text); font-variant-numeric: tabular-nums; }
       #detailhint { margin: 0 0 8px; }
+      #colorrow { display: flex; align-items: center; gap: 8px; margin: 6px 0 4px;
+                  font-size: 11px; color: var(--dim); }
+      #colorrow select { flex: 1; background: var(--panel); color: var(--text);
+                         border: 1px solid var(--line); border-radius: 4px;
+                         padding: 3px 5px; font: inherit; }
       #roundrow { display: flex; align-items: center; gap: 7px; margin: 2px 0 6px;
                   font-size: 11px; color: var(--dim); cursor: pointer; user-select: none; }
       #roundrow input { margin: 0; cursor: pointer; accent-color: var(--accent); }
@@ -129,6 +134,17 @@
         <span>taille des points</span>
         <input id="pointsize" type="range" min="0.4" max="2" step="0.05" value="1">
         <output id="pointsizeval">1,00</output>
+      </label>
+      <label id="colorrow">
+        <span>couleur par</span>
+        <select id="colormode">
+          <option value="classe">classe</option>
+          <option value="intensite">intensité</option>
+          <option value="retours">nombre de retours</option>
+          <option value="bande">bande de vol</option>
+          <option value="hauteur">hauteur au sol</option>
+          <option value="audit">audit</option>
+        </select>
       </label>
       <label id="roundrow">
         <input id="round" type="checkbox">

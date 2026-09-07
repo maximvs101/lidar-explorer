@@ -6,6 +6,7 @@ import { isWithinMetropole, tileNameAt } from './geo/projection.js';
 import { LocationPicker } from './ui/map.js';
 import { Viewer } from './render/viewer.js';
 import { PRESETS, PRESET_NAMES } from './render/presets.js';
+import { COLOR_MODES } from './render/pointsMaterial.js';
 import { className, shares } from './analysis/classStats.js';
 import { cardinal, chooseScale, formatLength, pixelsPerMetre, viewAzimuth } from './ui/scale.js';
 
@@ -32,6 +33,7 @@ const el = {
   modes: document.getElementById('modes'),
   pointSize: document.getElementById('pointsize'),
   pointSizeVal: document.getElementById('pointsizeval'),
+  colorMode: document.getElementById('colormode'),
   round: document.getElementById('round'),
   detail: document.getElementById('detail'),
   detailVal: document.getElementById('detailval'),
@@ -183,9 +185,12 @@ async function serveNodes(requests) {
           group.map((request) => request.node),
           {
             origin: viewer.sceneOrigin,
-            onNode: ({ node, positions, classification }) => {
+            onNode: ({ node, positions, classification, intensity, returns, source }) => {
               if (session !== mine || !viewer.hasTile(tileKey)) return;
-              viewer.addNode({ uid: `${tileKey}|${node.id}`, tileKey, node }, positions, classification);
+              viewer.addNode(
+                { uid: `${tileKey}|${node.id}`, tileKey, node },
+                positions, classification, { intensity, returns, source },
+              );
               if (mine.firstPaintMs == null) {
                 mine.firstPaintMs = performance.now() - mine.started;
                 log(`première image en ${(mine.firstPaintMs / 1000).toFixed(2)} s`, 'ok');
@@ -410,6 +415,9 @@ function setPreset(name) {
   document.getElementById('stage').style.background = `#${bg}`;
   // Chaque preset a sa taille de points ; le curseur suit le preset choisi
   // plutot que d'imposer un reglage a tous.
+  // Le sélecteur reflète le mode que le preset vient d'installer.
+  el.colorMode.value = Object.keys(COLOR_MODES)
+    .find((k) => COLOR_MODES[k] === viewer.materials.shared.uColorMode) ?? 'classe';
   el.round.checked = viewer.materials.shared.uRound > 0.5;
   el.pointSize.value = String(viewer.pointScale);
   el.pointSizeVal.textContent = fmtScale(viewer.pointScale);
@@ -427,6 +435,20 @@ el.detail.addEventListener('input', () => {
 // étaient grossis et laissaient voir le fond entre eux ; mesure faite depuis
 // que ce grossissement a disparu, l'écart de trous ne dépasse plus 0,18 point.
 // Le choix est donc devenu esthétique, et il revient à qui regarde.
+el.colorMode.addEventListener('change', () => {
+  const mode = el.colorMode.value;
+  if (mode === 'hauteur' || mode === 'audit') viewer.buildTerrain({ force: true });
+  viewer.materials.setHeightMode(mode === 'hauteur', viewer.preset.heightMax ?? 30);
+  viewer.materials.setColorMode(mode);
+  if (mode === 'audit') viewer.runAudit({ force: true });
+  if (mode === 'intensite') viewer.autoIntensityRange();
+  // Le mode retenu peut différer du mode demandé : hauteur et audit exigent un
+  // terrain, et sans lui le rendu retombe sur la couleur de classe.
+  el.colorMode.value = Object.keys(COLOR_MODES)
+    .find((k) => COLOR_MODES[k] === viewer.materials.shared.uColorMode) ?? 'classe';
+  renderLegend();
+});
+
 el.round.addEventListener('change', () => {
   viewer.materials.setRound(el.round.checked);
 });

@@ -30,6 +30,11 @@ se raffine selon la caméra, et les dalles voisines se chargent au déplacement.
   éviction des nœuds hors champ.
 - **Filtres de classe** instantanés : la classification vit sur le GPU, un octet
   par point indexant une palette.
+- **Coloration au choix** — par classe, par **intensité** (réflectance, bornée
+  automatiquement sur les centiles de la zone chargée), par **nombre de retours**
+  (un tir multi-écho a traversé du feuillage), par **bande de vol** (les passes
+  de l'avion se recouvrent, ce qui explique une densité trois fois supérieure à
+  celle annoncée), par hauteur au-dessus du sol, ou en mode audit.
 - **Six presets de rendu** — lecture technique, maquette, plan carré, peach,
   auburn, citrus — avec éclairage de profondeur, ombrage directionnel, découpe
   circulaire ou carrée et socle.

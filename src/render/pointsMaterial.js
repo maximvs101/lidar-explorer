@@ -52,9 +52,26 @@ const FALLBACK = [90, 90, 95];
 
 const VARIANTS = 4;
 
+/**
+ * Modes de coloration. Un seul uniforme les porte tous : trois interrupteurs
+ * separes finissaient par s'empiler en cascade de `if`, avec des combinaisons
+ * qui n'avaient aucun sens (hauteur ET audit ET intensite).
+ */
+export const COLOR_MODES = {
+  classe: 0,
+  hauteur: 1,
+  audit: 2,
+  intensite: 3,
+  retours: 4,
+  bande: 5,
+};
+
 const VERTEX = /* glsl */ `
   #define VARIANTES 4.0
   attribute float classification;
+  attribute float intensity;
+  attribute float returns;
+  attribute float source;
   uniform sampler2D uPalette;
   uniform float uSize;
   uniform float uScale;
@@ -68,6 +85,8 @@ const VERTEX = /* glsl */ `
   uniform float uHeightMode;
   uniform float uHeightMax;
   uniform float uAuditMode;
+  uniform float uColorMode;
+  uniform vec2 uIntensityRange;
   // 0 = disque, 1 = carre. Un booleen suffit : la distance de Tchebychev
   // (max des ecarts) decoupe un carre la ou la norme euclidienne fait un cercle.
   uniform float uClipSquare;
@@ -83,6 +102,20 @@ const VERTEX = /* glsl */ `
     else if (t < 0.60) c = mix(vec3(0.44, 0.68, 0.35), vec3(0.18, 0.47, 0.28), (t - 0.30) / 0.30);
     else               c = mix(vec3(0.18, 0.47, 0.28), vec3(0.95, 0.88, 0.55), (t - 0.60) / 0.40);
     return c;
+  }
+
+  /**
+   * Teinte qualitative tiree d'un identifiant.
+   *
+   * Pour une bande de vol, il n'y a pas d'ordre a respecter : il faut seulement
+   * que deux bandes voisines se distinguent. Le nombre d'or fait tourner la
+   * teinte d'un pas qui ne retombe jamais sur lui-meme.
+   */
+  vec3 teinteQualitative(float id) {
+    float h = fract(id * 0.6180339887);
+    vec3 k = fract(vec3(h) + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0));
+    vec3 rgb = clamp(abs(k * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+    return mix(vec3(0.55), rgb, 0.72); // desature : on veut distinguer, pas eblouir
   }
 
   // Bruit de valeur : deux batiments voisins prennent des teintes legerement
@@ -102,6 +135,31 @@ const VERTEX = /* glsl */ `
     vec4 entry = texture2D(uPalette, vec2((classification + 0.5) / 256.0,
                                           (variante + 0.5) / VARIANTES));
     vColor = entry.rgb * (1.0 + uTint * (bruit(position.xy + 137.0) - 0.5));
+
+    // --- Intensite : mesure physique, donc echelle neutre. Elle est bornee sur
+    // des centiles et non sur le min/max, qu'un seul echo aberrant suffirait a
+    // etirer jusqu'a aplatir tout le reste.
+    if (uColorMode > 2.5 && uColorMode < 3.5) {
+      float t = clamp((intensity - uIntensityRange.x)
+                      / max(uIntensityRange.y - uIntensityRange.x, 1.0), 0.0, 1.0);
+      vColor = mix(vec3(0.13, 0.13, 0.15), vec3(0.97, 0.95, 0.88), t);
+    }
+
+    // --- Retours : le nombre total d'echos du tir, sur les 4 bits hauts. Un tir
+    // qui en renvoie plusieurs a traverse quelque chose — c'est la signature du
+    // feuillage, et ce que le lidar a d'irremplacable.
+    if (uColorMode > 3.5 && uColorMode < 4.5) {
+      float total = floor(returns / 16.0);
+      if (total <= 1.5)      vColor = vec3(0.72, 0.71, 0.68);
+      else if (total <= 2.5) vColor = vec3(0.85, 0.78, 0.35);
+      else if (total <= 3.5) vColor = vec3(0.90, 0.55, 0.25);
+      else                   vColor = vec3(0.85, 0.25, 0.25);
+    }
+
+    // --- Bande de vol : montre le plan de vol et les recouvrements entre passes.
+    if (uColorMode > 4.5) {
+      vColor = teinteQualitative(source);
+    }
 
     // Mode audit : on ne peint en rouge que les points qui contredisent la
     // definition de leur propre classe, et seulement la ou le sol est connu.
@@ -182,7 +240,8 @@ export class PointsMaterialPool {
     this.shared = {
       uScale: 1, uAttenuate: attenuate ? 1 : 0, uRound: round ? 1 : 0, uBoost: 1,
       uClipCenter: [0, 0], uClipRadius: 0, uClipSquare: 0, uTint: 0,
-      uHeightMode: 0, uHeightMax: 30, uAuditMode: 0,
+      uHeightMode: 0, uHeightMax: 30, uAuditMode: 0, uColorMode: 0,
+      uIntensityRange: [200, 1450],
     };
   }
 
@@ -267,6 +326,8 @@ export class PointsMaterialPool {
         uHeightMode: { value: this.shared.uHeightMode },
         uHeightMax: { value: this.shared.uHeightMax },
         uAuditMode: { value: this.shared.uAuditMode },
+        uColorMode: { value: this.shared.uColorMode },
+        uIntensityRange: { value: new THREE.Vector2(...this.shared.uIntensityRange) },
         uTint: { value: this.shared.uTint },
       },
       vertexShader: VERTEX,
@@ -361,6 +422,30 @@ export class PointsMaterialPool {
     this._pushShared();
   }
 
+  /**
+   * Choisit la source de couleur. Les modes qui reposent sur le terrain
+   * (hauteur, audit) restent inactifs tant qu'il n'est pas pret : mieux vaut la
+   * couleur de classe qu'un gris uniforme sans explication.
+   */
+  setColorMode(mode) {
+    const code = COLOR_MODES[mode] ?? COLOR_MODES.classe;
+    const besoinTerrain = code === COLOR_MODES.hauteur || code === COLOR_MODES.audit;
+    if (besoinTerrain && !this.terrainTexture) {
+      this.shared.uColorMode = COLOR_MODES.classe;
+    } else {
+      this.shared.uColorMode = code;
+    }
+    this.shared.uHeightMode = this.shared.uColorMode === COLOR_MODES.hauteur ? 1 : 0;
+    this.shared.uAuditMode = this.shared.uColorMode === COLOR_MODES.audit ? 1 : 0;
+    this._pushShared();
+  }
+
+  /** Bornes d'intensite, en unites brutes du capteur. */
+  setIntensityRange(low, high) {
+    this.shared.uIntensityRange = [low, high];
+    this._pushShared();
+  }
+
   /** Colore en rouge les points qui contredisent la definition de leur classe. */
   setAuditMode(on) {
     this.shared.uAuditMode = on && this.terrainTexture ? 1 : 0;
@@ -386,6 +471,10 @@ export class PointsMaterialPool {
       material.uniforms.uHeightMode.value = this.shared.uHeightMode;
       material.uniforms.uHeightMax.value = this.shared.uHeightMax;
       material.uniforms.uAuditMode.value = this.shared.uAuditMode;
+      material.uniforms.uColorMode.value = this.shared.uColorMode;
+      material.uniforms.uIntensityRange.value.set(
+        this.shared.uIntensityRange[0], this.shared.uIntensityRange[1],
+      );
       if (this.terrainTexture) {
         material.uniforms.uTerrain.value = this.terrainTexture;
         material.uniforms.uTerrainMin.value.set(this.terrainMin[0], this.terrainMin[1]);
