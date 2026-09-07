@@ -5,7 +5,7 @@ name: Publier sur GitHub Pages
 # suite échoue, c'est publier un défaut connu.
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 # Un seul déploiement à la fois, et on laisse finir celui qui tourne :
