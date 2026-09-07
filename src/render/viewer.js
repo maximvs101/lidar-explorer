@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { diffSelection, selectNodes } from '../lod/selector.js';
+import { diffSelection, selectAcross } from '../lod/selector.js';
 import { PointsMaterialPool } from './pointsMaterial.js';
 import { histogram } from '../analysis/classStats.js';
 
@@ -34,9 +34,12 @@ export class Viewer {
     this.scene.add(this.group);
 
     this.materials = new PointsMaterialPool();
-    this.tile = null;
-    this.available = [];
-    this.loaded = new Map(); // id -> THREE.Points
+    // Toutes les dalles partagent une seule origine de scene, celle de la
+    // premiere chargee. Chacune garde en revanche son propre octree : son
+    // centre est exprime par rapport a cette origine commune.
+    this.origin = null;
+    this.tiles = new Map(); // cle de dalle -> { tile, nodes, localCenter }
+    this.loaded = new Map(); // uid (dalle|noeud) -> THREE.Points
     this.classCounts = new Map();
     this.pending = new Set();
     this.frustum = new THREE.Frustum();
@@ -84,11 +87,11 @@ export class Viewer {
     this.sized = true;
   }
 
-  /** Installe une dalle : vide la scène et cadre la caméra sur son emprise. */
+  /** Repart de zero sur une dalle, et cadre la camera sur son emprise. */
   setTile(tile, nodes) {
     this.clear();
-    this.tile = tile;
-    this.available = nodes;
+    this.origin = tile.origin;
+    this.addTile(tile, nodes);
 
     const { bounds } = tile.header;
     const [ox, oy, oz] = tile.origin;
@@ -106,10 +109,53 @@ export class Viewer {
     this.controls.update();
   }
 
-  /** Ajoute les points d'un nœud décodé. */
-  addNode(node, positions, classification) {
-    this.pending.delete(node.id);
-    if (this.loaded.has(node.id)) return;
+  /**
+   * Ajoute une dalle a la scene courante, sans toucher a la camera.
+   * Les points doivent etre decodes dans le repere commun : c'est
+   * `sceneOrigin` que le decodeur soustrait, jamais le centre propre a la
+   * dalle, sinon toutes les dalles se superposeraient au meme endroit.
+   */
+  addTile(tile, nodes) {
+    if (!this.origin) this.origin = tile.origin;
+    const key = tile.url;
+    if (this.tiles.has(key)) return key;
+    const { header } = tile;
+    this.tiles.set(key, {
+      tile,
+      nodes,
+      localCenter: [
+        header.center[0] - this.origin[0],
+        header.center[1] - this.origin[1],
+        header.center[2] - this.origin[2],
+      ],
+    });
+    return key;
+  }
+
+  hasTile(url) {
+    return this.tiles.has(url);
+  }
+
+  get sceneOrigin() {
+    return this.origin;
+  }
+
+  /** Retire une dalle et tout ce qu'elle a mis en scene. */
+  removeTile(key) {
+    if (!this.tiles.has(key)) return;
+    for (const uid of [...this.loaded.keys()]) {
+      if (uid.startsWith(`${key}|`)) this.removeNode(uid);
+    }
+    for (const uid of [...this.pending]) {
+      if (uid.startsWith(`${key}|`)) this.pending.delete(uid);
+    }
+    this.tiles.delete(key);
+  }
+
+  /** Ajoute les points d'un noeud decode, repere par son identifiant global. */
+  addNode({ uid, tileKey, node }, positions, classification) {
+    this.pending.delete(uid);
+    if (this.loaded.has(uid)) return;
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -117,13 +163,14 @@ export class Viewer {
     // lecture, et c'est elle qui indexe la palette. Pas de tampon de couleur.
     geometry.setAttribute('classification', new THREE.BufferAttribute(classification, 1));
 
-    const spacing = this.tile ? this.tile.header.spacing / 2 ** node.key.level : 0.6;
+    const entry = this.tiles.get(tileKey);
+    const spacing = entry ? entry.tile.header.spacing / 2 ** node.key.level : 0.6;
     const points = new THREE.Points(geometry, this.materials.forSize(Math.max(0.25, spacing * 0.9)));
     points.frustumCulled = false; // le tri est fait par le sélecteur, pas par Three
     points.userData.pointCount = classification.length;
     points.userData.hist = histogram(classification);
     this.group.add(points);
-    this.loaded.set(node.id, points);
+    this.loaded.set(uid, points);
 
     for (const [code, n] of points.userData.hist) {
       this.classCounts.set(code, (this.classCounts.get(code) ?? 0) + n);
@@ -176,34 +223,33 @@ export class Viewer {
     this.classCounts.clear();
     this.stats.pointsInScene = 0;
     this.stats.nodesInScene = 0;
-    this.available = [];
+    this.tiles.clear();
+    this.origin = null;
   }
 
-  /** Sélection courante, d'après la position réelle de la caméra. */
+  /** Selection courante, sur toutes les dalles en scene. */
   select() {
-    if (!this.tile || this.available.length === 0) return null;
-    const { header, origin } = this.tile;
+    if (this.tiles.size === 0) return null;
 
     this.matrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.matrix);
 
-    const localCenter = [
-      header.center[0] - origin[0],
-      header.center[1] - origin[1],
-      header.center[2] - origin[2],
-    ];
+    const groups = [...this.tiles.entries()].map(([key, entry]) => ({
+      key,
+      nodes: entry.nodes,
+      center: entry.localCenter,
+      halfSize: entry.tile.header.halfSize,
+      spacing: entry.tile.header.spacing,
+    }));
 
-    return selectNodes(
-      this.available,
+    return selectAcross(
+      groups,
       {
         position: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
         fovRadians: (this.camera.fov * Math.PI) / 180,
         viewportHeight: this.renderer.domElement.height,
       },
       {
-        center: localCenter,
-        halfSize: header.halfSize,
-        spacing: header.spacing,
         minScreenError: this.minScreenError,
         pointBudget: this.pointBudget,
         alwaysLevels: 0,
@@ -224,6 +270,7 @@ export class Viewer {
       selected: selection.selected.length,
       points: selection.totalPoints,
       rejected: selection.rejected,
+      tiles: selection.groups,
     };
 
     const present = new Set([...this.loaded.keys(), ...this.pending]);
@@ -237,8 +284,8 @@ export class Viewer {
     const batch = [];
     for (const candidate of toAdd) {
       if (batch.length >= maxRequests) break;
-      this.pending.add(candidate.node.id);
-      batch.push(candidate.node);
+      this.pending.add(candidate.uid);
+      batch.push({ uid: candidate.uid, tileKey: candidate.groupKey, node: candidate.node });
     }
     if (batch.length > 0) {
       this.stats.requested += batch.length;

@@ -89,12 +89,74 @@ export function selectNodes(nodes, view, options = {}) {
 }
 
 /**
+ * Sélection sur plusieurs dalles à la fois.
+ *
+ * Chaque dalle a son propre octree — centre, demi-côté et espacement lui sont
+ * propres — mais le plafond de points est **commun** : il porte sur ce que la
+ * carte graphique doit tenir, pas sur une dalle en particulier. On sélectionne
+ * donc dalle par dalle sans plafond, puis on tranche une seule fois sur
+ * l'ensemble trié. Appliquer le plafond par dalle donnerait N fois le budget
+ * dès qu'on en affiche plusieurs.
+ *
+ * Chaque groupe porte un `key` qui rend les identifiants uniques : le nœud
+ * racine de toute dalle s'appelle « 0-0-0-0 », et sans préfixe la deuxième
+ * dalle chargée serait prise pour la première, déjà en scène.
+ *
+ * Note pour qui relirait ce code : passer `pointBudget` au lieu d'`Infinity`
+ * dans l'appel par groupe ne change rien d'observable tant que le plafond est le
+ * même partout — le tri final, de même ordre, retranche derrière. Le test de
+ * mutation ne peut donc pas l'attraper. `Infinity` reste la bonne écriture parce
+ * qu'elle dit ce qu'on veut : un seul arbitrage, sur l'ensemble.
+ */
+export function selectAcross(groups, view, options = {}) {
+  const { pointBudget = 4_000_000, ...perGroup } = options;
+  const candidates = [];
+  const rejected = { culled: 0, tooCoarse: 0, budget: 0 };
+
+  for (const group of groups) {
+    const result = selectNodes(group.nodes, view, {
+      ...perGroup,
+      center: group.center,
+      halfSize: group.halfSize,
+      spacing: group.spacing,
+      pointBudget: Infinity,
+    });
+    rejected.culled += result.rejected.culled;
+    rejected.tooCoarse += result.rejected.tooCoarse;
+    for (const candidate of result.selected) {
+      candidates.push({ ...candidate, groupKey: group.key, uid: `${group.key}|${candidate.node.id}` });
+    }
+  }
+
+  candidates.sort((a, b) => {
+    if (a.mandatory !== b.mandatory) return a.mandatory ? -1 : 1;
+    return b.error - a.error;
+  });
+
+  const selected = [];
+  let totalPoints = 0;
+  for (const candidate of candidates) {
+    if (totalPoints + candidate.node.pointCount > pointBudget && selected.length > 0) {
+      rejected.budget += 1;
+      continue;
+    }
+    selected.push(candidate);
+    totalPoints += candidate.node.pointCount;
+  }
+
+  return { selected, totalPoints, rejected, groups: groups.length };
+}
+
+/**
  * Compare la sélection voulue à ce qui est déjà en scène.
  * `toAdd` est ordonné par priorité : le premier chargé est le plus utile.
+ * L'identité d'un élément est son `uid` s'il en a un — indispensable dès
+ * qu'il y a plus d'une dalle — et son identifiant de nœud sinon.
  */
 export function diffSelection(selected, present) {
-  const wanted = new Set(selected.map((c) => c.node.id));
-  const toAdd = selected.filter((c) => !present.has(c.node.id));
+  const idOf = (c) => c.uid ?? c.node.id;
+  const wanted = new Set(selected.map(idOf));
+  const toAdd = selected.filter((c) => !present.has(idOf(c)));
   const toRemove = [...present].filter((id) => !wanted.has(id));
   return { toAdd, toRemove };
 }

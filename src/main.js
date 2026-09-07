@@ -11,6 +11,8 @@ import { cardinal, chooseScale, formatLength, pixelsPerMetre, viewAzimuth } from
 
 const CONCURRENCY = 4;
 const POINT_BUDGET = 4_000_000;
+/** Dalles simultanement en scene. Au-dela, les plus eloignees sont relachees. */
+const MAX_TILES = 9;
 
 const el = {
   load: document.getElementById('load'),
@@ -130,23 +132,94 @@ async function makeLoader() {
  * rend au fil de l'eau. Une session porte la dalle courante : un lot arrivé
  * après un changement de lieu doit être jeté, pas ajouté à la nouvelle scène.
  */
-async function serveNodes(nodes) {
+async function serveNodes(requests) {
   if (!session) return;
   const mine = session;
+
+  // Les demandes peuvent porter sur plusieurs dalles : on les regroupe, chaque
+  // lot etant lu dans le fichier qui lui correspond.
+  const byTile = new Map();
+  for (const request of requests) {
+    if (!byTile.has(request.tileKey)) byTile.set(request.tileKey, []);
+    byTile.get(request.tileKey).push(request);
+  }
+
+  await Promise.all(
+    [...byTile.entries()].map(async ([tileKey, group]) => {
+      const entry = viewer.tiles.get(tileKey);
+      if (!entry) {
+        for (const request of group) viewer.pending.delete(request.uid);
+        return;
+      }
+      try {
+        await loader.loadNodes(
+          entry.tile,
+          group.map((request) => request.node),
+          {
+            origin: viewer.sceneOrigin,
+            onNode: ({ node, positions, classification }) => {
+              if (session !== mine || !viewer.hasTile(tileKey)) return;
+              viewer.addNode({ uid: `${tileKey}|${node.id}`, tileKey, node }, positions, classification);
+              if (mine.firstPaintMs == null) {
+                mine.firstPaintMs = performance.now() - mine.started;
+                log(`première image en ${(mine.firstPaintMs / 1000).toFixed(2)} s`, 'ok');
+              }
+            },
+          },
+        );
+      } catch (error) {
+        for (const request of group) viewer.pending.delete(request.uid);
+        if (session === mine) log(`nœud non chargé : ${error.message}`, 'warn');
+      }
+    }),
+  );
+}
+
+/**
+ * Etend la scene aux dalles voisines visibles, et relache les plus lointaines.
+ *
+ * L'emprise interrogee est un carre centre sur le point vise, de demi-cote egal
+ * a la distance de la camera : c'est une approximation du champ de vision, mais
+ * elle a l'avantage de ne pas s'effondrer quand la camera regarde a l'horizon,
+ * ou la projection exacte du frustum au sol part a l'infini.
+ */
+async function extendToNeighbours() {
+  if (!session || !viewer.sceneOrigin || extendToNeighbours.busy) return;
+  extendToNeighbours.busy = true;
   try {
-    await loader.loadNodes(mine.tile, nodes, {
-      onNode: ({ node, positions, classification }) => {
-        if (session !== mine) return;
-        viewer.addNode(node, positions, classification);
-        if (mine.firstPaintMs == null) {
-          mine.firstPaintMs = performance.now() - mine.started;
-          log(`première image en ${(mine.firstPaintMs / 1000).toFixed(2)} s`, 'ok');
-        }
-      },
-    });
+    const [ox, oy] = viewer.sceneOrigin;
+    const target = viewer.controls.target;
+    const cx = target.x + ox;
+    const cy = target.y + oy;
+    const reach = Math.min(Math.max(viewer.camera.position.distanceTo(target), 300), 2500);
+    const bbox = { minX: cx - reach, minY: cy - reach, maxX: cx + reach, maxY: cy + reach };
+
+    const { tiles } = await index.findIn(bbox, { limit: 32 });
+    if (!session) return;
+
+    // Les plus proches du point vise d'abord : c'est la que le detail compte.
+    const distance = (t) =>
+      Math.hypot((t.bounds.minX + t.bounds.maxX) / 2 - cx, (t.bounds.minY + t.bounds.maxY) / 2 - cy);
+    const wanted = tiles.sort((a, b) => distance(a) - distance(b)).slice(0, MAX_TILES);
+    const wantedUrls = new Set(wanted.map((t) => t.url));
+
+    for (const key of [...viewer.tiles.keys()]) {
+      if (!wantedUrls.has(key)) viewer.removeTile(key);
+    }
+
+    for (const descriptor of wanted) {
+      if (viewer.hasTile(descriptor.url)) continue;
+      const opened = await loader.open(descriptor.url);
+      if (!session || viewer.hasTile(descriptor.url)) continue;
+      const { nodes } = await loader.hierarchy(opened, { maxLevel: Infinity });
+      if (!session) return;
+      viewer.addTile(opened, nodes);
+      log(`dalle voisine ajoutée : ${descriptor.name ?? descriptor.url.slice(-28)}`, 'dim');
+    }
   } catch (error) {
-    for (const node of nodes) viewer.pending.delete(node.id);
-    if (session === mine) log(`nœud non chargé : ${error.message}`, 'warn');
+    log(`voisines indisponibles : ${error.message}`, 'warn');
+  } finally {
+    extendToNeighbours.busy = false;
   }
 }
 
@@ -238,6 +311,7 @@ async function loadSelected() {
 
     session = { tile, started, firstPaintMs: null };
     viewer.setTile(tile, nodes);
+    extendToNeighbours();
 
     table(el.stats, levels.map((l) => [`niveau ${l.level}`, `${fmt(l.points)} pts · ${mo(l.bytes)}`]));
     log('navigation libre — le détail se charge selon la caméra', 'ok');
@@ -305,12 +379,29 @@ function renderScale() {
     `${formatLength(chosen.metres)} au centre · vue vers le ${cardinal(azimuth)} (${Math.round(azimuth)}°)`;
 }
 
+/** Ne réinterroge l'index que si la vue a réellement bougé. */
+let lastReach = null;
+function maybeExtend() {
+  if (!session) return;
+  const target = viewer.controls.target;
+  const signature = [
+    Math.round(target.x / 100),
+    Math.round(target.y / 100),
+    Math.round(viewer.camera.position.distanceTo(target) / 100),
+  ].join(',');
+  if (signature === lastReach) return;
+  lastReach = signature;
+  extendToNeighbours();
+}
+
 setInterval(() => {
   const s = viewer.stats;
   renderScale();
+  maybeExtend();
   const sel = s.lastSelection;
   el.hud.innerHTML = session
-    ? `<b>${fmt(s.pointsInScene)}</b> pts · <b>${s.nodesInScene}</b> nœuds en scène` +
+    ? `<b>${fmt(s.pointsInScene)}</b> pts · <b>${s.nodesInScene}</b> nœuds · ` +
+      `<b>${viewer.tiles.size}</b> dalle${viewer.tiles.size > 1 ? 's' : ''}` +
       (sel ? ` · ${sel.selected} voulus, ${fmt(sel.points)} pts` : '') +
       ` · ${viewer.memory().geometries} géométries · ${s.evicted} évictions`
     : 'cliquez sur la carte pour choisir un lieu';
@@ -355,6 +446,8 @@ window.__hidden = hidden;
 window.__applyHidden = applyHidden;
 window.__renderLegend = renderLegend;
 window.__renderScale = renderScale;
+window.__extend = extendToNeighbours;
+window.__maybeExtend = maybeExtend;
 window.__picker = picker;
 window.__index = index;
 window.__pick = pick;

@@ -88,8 +88,12 @@ export class TileLoader {
    * Charge et décode une liste de nœuds. `onNode` est appelé au fil de l'eau
    * pour que l'affichage progresse au lieu d'attendre le dernier octet.
    */
-  async loadNodes(tile, nodes, { onNode } = {}) {
-    const { header, origin } = tile;
+  async loadNodes(tile, nodes, { onNode, origin: sceneOrigin } = {}) {
+    const { header } = tile;
+    // Avec plusieurs dalles à l'écran, c'est l'origine de la **scène** qu'il
+    // faut soustraire, pas celle propre à la dalle : sinon chaque dalle est
+    // ramenée à son propre centre et toutes se superposent au même endroit.
+    const origin = sceneOrigin ?? tile.origin;
     const results = await Promise.all(
       nodes.map(async (node) => {
         const bytes = await this._read(

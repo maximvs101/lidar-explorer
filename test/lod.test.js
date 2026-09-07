@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { distanceToBox, nodeBounds, nodeSpacing, screenSpaceError } from '../src/lod/octree.js';
-import { diffSelection, selectNodes } from '../src/lod/selector.js';
+import { diffSelection, selectAcross, selectNodes } from '../src/lod/selector.js';
 
 const CENTER = [0, 0, 0];
 const HALF = 500;
@@ -136,6 +136,68 @@ describe('selectNodes', () => {
   });
 });
 
+describe('selectAcross — plusieurs dalles', () => {
+  /** Deux dalles voisines de 1 km, la seconde décalée d'un kilomètre en X. */
+  function deuxDalles() {
+    return [
+      { key: 'A', nodes: makeNodes(), center: [0, 0, 0], halfSize: HALF, spacing: SPACING },
+      { key: 'B', nodes: makeNodes(), center: [1000, 0, 0], halfSize: HALF, spacing: SPACING },
+    ];
+  }
+
+  it('donne des identifiants distincts aux nœuds homonymes', () => {
+    // Le nœud racine de toute dalle s'appelle « 0-0-0-0 » : sans préfixe, la
+    // seconde dalle serait prise pour la première et jamais affichée.
+    const r = selectAcross(deuxDalles(), { ...VIEW, position: [500, 0, 900] }, { alwaysLevels: 0 });
+    const racines = r.selected.filter((c) => c.node.key.level === 0);
+    expect(racines).toHaveLength(2);
+    expect(new Set(racines.map((c) => c.uid)).size).toBe(2);
+    expect(racines.map((c) => c.uid).sort()).toEqual(['A|0-0-0-0', 'B|0-0-0-0']);
+    expect(new Set(r.selected.map((c) => c.uid)).size).toBe(r.selected.length);
+  });
+
+  it('applique un plafond commun, pas un plafond par dalle', () => {
+    // C'est le défaut qui ne se voit qu'à partir de la deuxième dalle : un
+    // plafond appliqué dalle par dalle laisse passer N fois le budget.
+    const groups = deuxDalles();
+    const budget = 300_000;
+    const r = selectAcross(groups, { ...VIEW, position: [500, 0, 700] }, { alwaysLevels: 0, pointBudget: budget });
+    expect(r.totalPoints).toBeLessThanOrEqual(budget);
+    expect(r.rejected.budget).toBeGreaterThan(0);
+
+    const seule = selectAcross([groups[0]], { ...VIEW, position: [500, 0, 700] }, {
+      alwaysLevels: 0,
+      pointBudget: budget,
+    });
+    expect(seule.totalPoints).toBeLessThanOrEqual(budget);
+  });
+
+  it('sert les racines de toutes les dalles avant le détail de l’une d’elles', () => {
+    const r = selectAcross(deuxDalles(), { ...VIEW, position: [0, 0, 700] }, { alwaysLevels: 0 });
+    const deuxPremiers = r.selected.slice(0, 2).map((c) => c.node.key.level);
+    expect(deuxPremiers).toEqual([0, 0]);
+  });
+
+  it('privilégie la dalle regardée quand le budget est serré', () => {
+    // Caméra franchement au-dessus de B : à budget contraint, le détail doit
+    // aller à B, pas se répartir également.
+    const r = selectAcross(deuxDalles(), { ...VIEW, position: [1000, 0, 300] }, {
+      alwaysLevels: 0,
+      pointBudget: 800_000,
+    });
+    const parDalle = { A: 0, B: 0 };
+    for (const c of r.selected) parDalle[c.groupKey] += c.node.pointCount;
+    expect(parDalle.B).toBeGreaterThan(parDalle.A);
+  });
+
+  it('cumule les rejets de toutes les dalles', () => {
+    const r = selectAcross(deuxDalles(), { ...VIEW, position: [0, 0, 200_000] }, { alwaysLevels: 0 });
+    expect(r.groups).toBe(2);
+    expect(r.rejected.tooCoarse).toBeGreaterThan(0);
+    expect(r.selected).toHaveLength(2); // une racine par dalle, rien d'autre
+  });
+});
+
 describe('diffSelection', () => {
   it('n’ajoute que le manquant et ne retire que le superflu', () => {
     const selected = [
@@ -153,5 +215,25 @@ describe('diffSelection', () => {
     const { toAdd, toRemove } = diffSelection(selected, new Set(['a']));
     expect(toAdd).toHaveLength(0);
     expect(toRemove).toHaveLength(0);
+  });
+
+  it('distingue deux nœuds homonymes venus de dalles différentes', () => {
+    // Sans identifiant global, les deux racines « 0-0-0-0 » se confondent : la
+    // seconde dalle est réputée déjà en scène et ne se charge jamais. Les cas
+    // ci-dessus ne portent pas d'`uid`, donc ils ne l'éprouvent pas.
+    const selected = [
+      { uid: 'A|0-0-0-0', node: { id: '0-0-0-0' } },
+      { uid: 'B|0-0-0-0', node: { id: '0-0-0-0' } },
+    ];
+    const { toAdd, toRemove } = diffSelection(selected, new Set(['A|0-0-0-0']));
+    expect(toAdd.map((c) => c.uid)).toEqual(['B|0-0-0-0']);
+    expect(toRemove).toEqual([]);
+  });
+
+  it('retire un nœud d’une dalle relâchée sans toucher à son homonyme', () => {
+    const selected = [{ uid: 'B|0-0-0-0', node: { id: '0-0-0-0' } }];
+    const { toAdd, toRemove } = diffSelection(selected, new Set(['A|0-0-0-0', 'B|0-0-0-0']));
+    expect(toRemove).toEqual(['A|0-0-0-0']);
+    expect(toAdd).toHaveLength(0);
   });
 });
