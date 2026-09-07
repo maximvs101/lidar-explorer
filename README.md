@@ -86,6 +86,42 @@ l'épaisseur du trait.
   deux points voisins s'y touchent tout juste. Au-delà on gagne une surface
   pleine en perdant du détail, ce qui va contre l'intérêt de la donnée.
 
+#### Aux deux minimums
+
+Mesuré sur une dalle de Toulouse, un seul carré, canevas 900 × 600, caméra fixe.
+La part de trous est celle des pixels de fond restés à l'intérieur de la
+silhouette du nuage :
+
+| taille | seuil | points | nœuds | trous |
+|---|---|---|---|---|
+| 1,0 | 1,5 | 1 082 449 | 9 | **1,01 %** |
+| 0,4 | 1,5 | 1 082 449 | 9 | **9,59 %** |
+| 1,0 | 0,5 | 3 991 352 | 40 | **0,98 %** |
+| 0,4 | 0,5 | 3 991 352 | 40 | **3,66 %** |
+
+Rien ne se dérègle, mais deux choses méritent d'être sues.
+
+**Au seuil minimal, c'est le plafond de points qui décide, plus le seuil.**
+3 991 352 points sur 4 000 000, et 14 nœuds écartés faute de place. La coupe
+reste propre : les écartés ont une erreur écran de 0,50 à 0,59 px, les retenus de
+0,61 à 15,47 — aucune inversion de priorité, donc pas de plaque grossière au
+milieu du fin. Un contrôle le dit maintenant explicitement, parce qu'un plafond
+respecté ne dit pas qu'il ne gêne pas.
+
+**À la taille minimale, le réglage n'agit plus que sur la sous-couche.** Un point
+ne peut pas être rasterisé sous un pixel ; aux deux minimums, 98 % des nœuds
+calculent une taille inférieure à 1 px et sont ramenés à ce plancher. Ne
+grandissent encore que les nœuds grossiers — ceux, justement, qui bouchent les
+interstices entre les points fins. C'est pourquoi réduire la taille ouvre des
+trous : ce n'est pas le détail qui maigrit, c'est la sous-couche qui disparaît.
+
+Le reste tient. Caméra immobile au seuil minimal : **0 éviction et 0 requête sur
+2 556 images**, donc pas de battement au ras du plafond — et le témoin le prouve,
+puisque bouger la caméra produit aussitôt 13 évictions et 13 requêtes. La visée
+de la mesure, qui lit le tampon de profondeur, ne perd rien : 36,7 % de touches
+aux deux minimums contre 37,5 % au réglage courant, sur la même grille de
+240 points.
+
 Ces réglages, comme les filtres de classe, sont conservés quand on change de
 preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
 

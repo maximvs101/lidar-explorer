@@ -298,7 +298,7 @@ async function extendToNeighbours() {
     const bbox = { minX: cx - reach, minY: cy - reach, maxX: cx + reach, maxY: cy + reach };
 
     const { tiles } = await index.findIn(bbox, { limit: 32 });
-    if (!session) return;
+    if (!session || !el.neighbours.checked) return;
 
     // Les plus proches du point vise d'abord : c'est la que le detail compte.
     const distance = (t) =>
@@ -311,11 +311,15 @@ async function extendToNeighbours() {
     }
 
     for (const descriptor of wanted) {
+      // L'option est relue a chaque tour, pas seulement a l'entree : cette
+      // boucle attend le reseau a deux endroits, et la decocher pendant qu'elle
+      // tourne laissait les dalles continuer d'arriver apres le repli.
+      if (!el.neighbours.checked) return;
       if (viewer.hasTile(descriptor.url)) continue;
       const opened = await loader.open(descriptor.url);
-      if (!session || viewer.hasTile(descriptor.url)) continue;
+      if (!session || !el.neighbours.checked || viewer.hasTile(descriptor.url)) continue;
       const { nodes } = await loader.hierarchy(opened, { maxLevel: Infinity });
-      if (!session) return;
+      if (!session || !el.neighbours.checked) return;
       viewer.addTile(opened, nodes);
       voisines += 1;
       logCompteur('voisines', `${voisines} dalle${voisines > 1 ? 's' : ''} voisine${voisines > 1 ? 's' : ''} ajoutée${voisines > 1 ? 's' : ''}`);
@@ -877,9 +881,17 @@ setInterval(() => {
         detail: session.firstPaintMs == null ? 'en attente…' : `${(session.firstPaintMs / 1000).toFixed(2)} s`,
       },
       {
-        label: 'Points en scène sous le plafond',
-        pass: s.pointsInScene <= POINT_BUDGET,
-        detail: `${fmt(s.pointsInScene)} / ${fmt(POINT_BUDGET)}`,
+        // Le plafond respecté ne dit pas qu'il ne gêne pas. Mesuré au seuil de
+        // détail minimal : 3 991 352 points sur 4 000 000, donc le contrôle
+        // passe, alors que 14 nœuds ont été écartés faute de place. Sans ce
+        // décompte, rien ne distingue « le seuil décide » de « le plafond
+        // décide » — et abaisser encore le seuil n'aurait plus aucun effet.
+        label: 'Plafond de points non contraignant',
+        pass: (s.lastSelection?.rejected?.budget ?? 0) === 0,
+        detail: `${fmt(s.pointsInScene)} / ${fmt(POINT_BUDGET)}`
+          + (s.lastSelection?.rejected?.budget
+            ? ` · ${s.lastSelection.rejected.budget} nœuds écartés faute de place`
+            : ''),
       },
       {
         // Un simple « <= » passerait à zéro géométrie, c'est-à-dire quand rien
