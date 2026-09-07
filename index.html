@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Explorateur LiDAR HD — socle de chargement</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0e1116;
+        --panel: #151a22;
+        --line: #263041;
+        --text: #dfe4ea;
+        --dim: #8b949e;
+        --ok: #7ee787;
+        --warn: #ffd479;
+        --err: #ff7b72;
+        --accent: #7fd1ff;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--text);
+        font: 13px/1.55 ui-monospace, Consolas, monospace;
+        display: grid; grid-template-columns: minmax(420px, 460px) 1fr; height: 100vh;
+      }
+      #panel { padding: 16px 18px; overflow: auto; border-right: 1px solid var(--line); }
+      #stage { display: grid; place-items: center; padding: 20px; min-width: 0; }
+      canvas { background: #080a0e; border: 1px solid var(--line); max-width: 100%; }
+      h1 { font-size: 14px; margin: 0 0 4px; color: var(--accent); }
+      h2 { font-size: 12px; margin: 18px 0 6px; color: var(--dim); text-transform: uppercase;
+           letter-spacing: .08em; font-weight: 600; }
+      p.sub { margin: 0 0 14px; color: var(--dim); font-size: 12px; }
+      button {
+        background: var(--panel); color: var(--text); border: 1px solid var(--line);
+        padding: 7px 12px; border-radius: 5px; cursor: pointer; font: inherit; margin: 0 6px 6px 0;
+      }
+      button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+      button:disabled { opacity: .45; cursor: default; }
+      table { border-collapse: collapse; width: 100%; font-size: 12px; }
+      td { padding: 2px 8px 2px 0; vertical-align: top; }
+      td.k { color: var(--dim); white-space: nowrap; }
+      td.v { text-align: right; font-variant-numeric: tabular-nums; }
+      .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+      #log { margin-top: 6px; font-size: 12px; }
+      #log div { margin: 1px 0; white-space: pre-wrap; }
+      .check { display: flex; gap: 8px; align-items: baseline; margin: 3px 0; font-size: 12px; }
+      .check .mark { width: 1.2em; flex: none; }
+    </style>
+  </head>
+  <body>
+    <div id="panel">
+      <h1>Explorateur LiDAR HD — lot 1</h1>
+      <p class="sub">Socle de chargement : lecture par intervalles, file bornée, cache, décodage hors fil principal.</p>
+      <div>
+        <button id="load">Charger (niveaux 0-2)</button>
+        <button id="reload" disabled>Recharger — doit venir du cache</button>
+        <button id="clear">Vider le cache</button>
+      </div>
+      <div id="log"></div>
+      <h2>Contrôles</h2>
+      <div id="checks"></div>
+      <h2>Compteurs</h2>
+      <div id="stats"></div>
+    </div>
+    <div id="stage"><canvas id="preview" width="760" height="760"></canvas></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "lidar-explorer",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Explorateur LiDAR HD (IGN) - streaming COPC dans le navigateur",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "three": "^0.180.0",
+    "laz-perf": "^0.0.7"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0",
+    "vitest": "^3.0.0"
+  }
+}
