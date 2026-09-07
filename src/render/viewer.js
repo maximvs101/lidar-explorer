@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { diffSelection, selectAcross } from '../lod/selector.js';
-import { PointsMaterialPool } from './pointsMaterial.js';
+import { DEFAULT_PALETTE, MODEL_PALETTE, PointsMaterialPool } from './pointsMaterial.js';
+import { DioramaRenderer } from './diorama.js';
 import { histogram } from '../analysis/classStats.js';
 
 /**
@@ -34,6 +35,9 @@ export class Viewer {
     this.scene.add(this.group);
 
     this.materials = new PointsMaterialPool();
+    this.diorama = new DioramaRenderer(this.renderer);
+    this.dioramaOn = false;
+    this.backgrounds = { scan: 0x080a0e, model: 0xece7dd };
     // Toutes les dalles partagent une seule origine de scene, celle de la
     // premiere chargee. Chacune garde en revanche son propre octree : son
     // centre est exprime par rapport a cette origine commune.
@@ -84,6 +88,7 @@ export class Viewer {
       viewportHeight: this.renderer.domElement.height,
       fovRadians: (this.camera.fov * Math.PI) / 180,
     });
+    this.diorama.setSize(this.renderer.domElement.width, this.renderer.domElement.height);
     this.sized = true;
   }
 
@@ -177,6 +182,35 @@ export class Viewer {
     }
     this.stats.nodesInScene = this.loaded.size;
     this.stats.pointsInScene += classification.length;
+  }
+
+  /**
+   * Bascule entre lecture technique et rendu maquette.
+   *
+   * Les deux modes lisent exactement les memes points : seuls changent le
+   * nuancier, le fond et les passes de post-traitement. C'est ce qui permet de
+   * comparer les deux rendus sur une scene identique, et donc de mesurer ce que
+   * l'habillage apporte vraiment.
+   */
+  setDiorama(on) {
+    this.dioramaOn = on;
+    this.materials.setPalette(on ? MODEL_PALETTE : DEFAULT_PALETTE);
+    const background = on ? this.backgrounds.model : this.backgrounds.scan;
+    this.renderer.setClearColor(background, 1);
+    const c = new THREE.Color(background);
+    this.diorama.background.set(background);
+    this.diorama.edlMaterial.uniforms.uBackground.value.set(c.r, c.g, c.b);
+    // Points carres et grossis en maquette : ils se joignent en surface au lieu
+    // de laisser voir le fond entre eux. Ronds et espaces, chaque interstice
+    // devient un trou noir sous l'ombrage de profondeur.
+    this.materials.setRound(!on);
+    this.materials.setBoost(on ? 1.55 : 1);
+  }
+
+  /** Une seule voie de rendu, pour que tout le reste ignore le mode courant. */
+  draw() {
+    if (this.dioramaOn) this.diorama.render(this.scene, this.camera);
+    else this.renderer.render(this.scene, this.camera);
   }
 
   /** Masque ou révèle des classes. Instantané : seule la palette change. */
@@ -299,7 +333,7 @@ export class Viewer {
     if (!this.sized) return;
     this.controls.update();
     this.refresh();
-    this.renderer.render(this.scene, this.camera);
+    this.draw();
     this.stats.frames += 1;
   }
 
@@ -328,12 +362,12 @@ export class Viewer {
     }
     const pixel = new Uint8Array(4);
     const axis = new THREE.Vector3(0, 0, 1);
-    for (let i = 0; i < 5; i += 1) this.renderer.render(this.scene, this.camera);
+    for (let i = 0; i < 5; i += 1) this.draw();
     const started = performance.now();
     for (let i = 0; i < frames; i += 1) {
       this.camera.position.applyAxisAngle(axis, 0.01);
       this.camera.lookAt(this.controls.target);
-      this.renderer.render(this.scene, this.camera);
+      this.draw();
       gl.readPixels(1, 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel); // force la synchro
     }
     const ms = performance.now() - started;
@@ -352,12 +386,25 @@ export class Viewer {
     const w = gl.drawingBufferWidth;
     const h = gl.drawingBufferHeight;
     if (w < 2 || h < 2) return null;
+    // Toujours sans post-traitement : le vignettage assombrit progressivement
+    // les bords, donc le fond n'est plus une couleur unique et rien ne peut plus
+    // en être distingué — la mesure répondrait « 100 % » quel que soit le rendu.
+    // La couverture décrit la scène, pas l'habillage.
     this.renderer.render(this.scene, this.camera);
     const pixels = new Uint8Array(w * h * 4);
     gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    // Surtout pas de THREE.Color ici : depuis la gestion des espaces
+    // colorimétriques, `new THREE.Color(0x080a0e).r` rend une valeur linéaire
+    // (~0,002), pas 8/255. Comparée à des octets lus par readPixels, elle fait
+    // passer *tous* les pixels pour peints — le taux de couverture annonce
+    // alors 100 % quel que soit le rendu.
+    const hex = this.dioramaOn ? this.backgrounds.model : this.backgrounds.scan;
+    const br = (hex >> 16) & 0xff;
+    const bg2 = (hex >> 8) & 0xff;
+    const bb = hex & 0xff;
     let painted = 0;
     for (let i = 0; i < pixels.length; i += 4) {
-      if (Math.abs(pixels[i] - 8) > 6 || Math.abs(pixels[i + 1] - 10) > 6 || Math.abs(pixels[i + 2] - 14) > 6) {
+      if (Math.abs(pixels[i] - br) > 6 || Math.abs(pixels[i + 1] - bg2) > 6 || Math.abs(pixels[i + 2] - bb) > 6) {
         painted += 1;
       }
     }
@@ -373,6 +420,7 @@ export class Viewer {
     this._observer.disconnect();
     this.clear();
     this.controls.dispose();
+    this.diorama.dispose();
     this.materials.dispose();
     this.renderer.dispose();
   }

@@ -5,7 +5,7 @@ import { TileIndex, acquisitionSeason } from './geo/wfs.js';
 import { isWithinMetropole, tileNameAt } from './geo/projection.js';
 import { LocationPicker } from './ui/map.js';
 import { Viewer } from './render/viewer.js';
-import { DEFAULT_PALETTE } from './render/pointsMaterial.js';
+import { DEFAULT_PALETTE, MODEL_PALETTE } from './render/pointsMaterial.js';
 import { className, shares } from './analysis/classStats.js';
 import { cardinal, chooseScale, formatLength, pixelsPerMetre, viewAzimuth } from './ui/scale.js';
 
@@ -29,7 +29,12 @@ const el = {
   scale: document.getElementById('scale'),
   scalebar: document.getElementById('scalebar'),
   scaletext: document.getElementById('scaletext'),
+  modeScan: document.getElementById('mode-scan'),
+  modeModel: document.getElementById('mode-model'),
 };
+
+/** Mode d'affichage : lecture technique, ou maquette. */
+let dioramaOn = false;
 
 /** Classes masquées, partagées entre la légende et les boutons de préréglage. */
 const hidden = new Set();
@@ -61,7 +66,7 @@ function renderLegend() {
   const rows = shares(counts);
   el.legend.innerHTML = rows
     .map((r) => {
-      const rgb = DEFAULT_PALETTE[r.code] ?? [90, 90, 95];
+      const rgb = (dioramaOn ? MODEL_PALETTE : DEFAULT_PALETTE)[r.code] ?? [90, 90, 95];
       const off = hidden.has(r.code) ? ' off' : '';
       return (
         `<label class="cls${off}"><input type="checkbox" data-code="${r.code}"` +
@@ -338,6 +343,17 @@ el.clear.addEventListener('click', async () => {
 });
 el.load.addEventListener('click', () => loadSelected());
 
+function setMode(on) {
+  dioramaOn = on;
+  viewer.setDiorama(on);
+  el.modeScan.classList.toggle('on', !on);
+  el.modeModel.classList.toggle('on', on);
+  document.getElementById('stage').style.background = on ? '#ece7dd' : '#080a0e';
+  renderLegend();
+}
+el.modeScan.addEventListener('click', () => setMode(false));
+el.modeModel.addEventListener('click', () => setMode(true));
+
 el.legend.addEventListener('change', (event) => {
   const code = Number(event.target.dataset.code);
   if (Number.isNaN(code)) return;
@@ -448,6 +464,7 @@ window.__renderLegend = renderLegend;
 window.__renderScale = renderScale;
 window.__extend = extendToNeighbours;
 window.__maybeExtend = maybeExtend;
+window.__setMode = setMode;
 window.__picker = picker;
 window.__index = index;
 window.__pick = pick;

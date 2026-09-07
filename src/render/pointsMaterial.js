@@ -24,6 +24,30 @@ export const DEFAULT_PALETTE = {
   66: [70, 120, 180],
   67: [130, 130, 135],
 };
+/**
+ * Palette « maquette » : des matières plutôt que des codes.
+ *
+ * Le nuancier de classification est fait pour distinguer, pas pour être beau —
+ * ses couleurs saturées sur fond noir donnent un rendu d'instrument. Ici on vise
+ * le carton-plume et la résine : socle sable, bâtiments crème, mousse de
+ * modélisme. Le contraste ne vient plus de la couleur mais du relief calculé par
+ * l'éclairage de profondeur, ce qui laisse la palette rester douce.
+ */
+export const MODEL_PALETTE = {
+  1: [176, 170, 160],
+  2: [214, 198, 172],
+  3: [156, 178, 124],
+  4: [126, 158, 104],
+  5: [96, 134, 88],
+  6: [234, 220, 200],
+  9: [126, 172, 186],
+  17: [196, 190, 180],
+  64: [216, 196, 148],
+  65: [178, 150, 176],
+  66: [126, 172, 186],
+  67: [186, 182, 176],
+};
+
 const FALLBACK = [90, 90, 95];
 
 const VERTEX = /* glsl */ `
@@ -32,6 +56,7 @@ const VERTEX = /* glsl */ `
   uniform float uSize;
   uniform float uScale;
   uniform float uAttenuate;
+  uniform float uBoost;
   varying vec3 vColor;
 
   void main() {
@@ -39,7 +64,7 @@ const VERTEX = /* glsl */ `
     vColor = entry.rgb;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mv;
-    gl_PointSize = uAttenuate > 0.5 ? max(1.0, uSize * uScale / max(-mv.z, 0.001)) : uSize;
+    gl_PointSize = uAttenuate > 0.5 ? max(1.0, uBoost * uSize * uScale / max(-mv.z, 0.001)) : uSize * uBoost;
     // Une classe masquée est renvoyée hors du volume de vue : rien n'est
     // rasterisé, ce qui coûte moins qu'un discard au fragment.
     if (entry.a < 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -66,7 +91,7 @@ export class PointsMaterialPool {
     this.hidden = new Set();
     this.texture = this._buildTexture();
     this.materials = new Map(); // taille de point -> ShaderMaterial
-    this.shared = { uScale: 1, uAttenuate: attenuate ? 1 : 0, uRound: round ? 1 : 0 };
+    this.shared = { uScale: 1, uAttenuate: attenuate ? 1 : 0, uRound: round ? 1 : 0, uBoost: 1 };
   }
 
   _buildTexture() {
@@ -98,6 +123,13 @@ export class PointsMaterialPool {
     this.texture.needsUpdate = true;
   }
 
+  /** Change de nuancier sans toucher aux points : seule la texture est réécrite. */
+  setPalette(palette) {
+    this.palette = { ...palette };
+    this._fill();
+    this.texture.needsUpdate = true;
+  }
+
   isHidden(code) {
     return this.hidden.has(code);
   }
@@ -115,6 +147,7 @@ export class PointsMaterialPool {
         uScale: { value: this.shared.uScale },
         uAttenuate: { value: this.shared.uAttenuate },
         uRound: { value: this.shared.uRound },
+        uBoost: { value: this.shared.uBoost },
       },
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
@@ -143,11 +176,25 @@ export class PointsMaterialPool {
     this._pushShared();
   }
 
+  /**
+   * Grossit les points sans toucher aux donnees.
+   *
+   * En mode maquette c'est indispensable : des points espaces laissent voir le
+   * fond entre eux, et l'eclairage de profondeur transforme alors chaque
+   * interstice en trou noir — le rendu vire au terrain aride au lieu de la
+   * surface pleine qu'on cherche.
+   */
+  setBoost(factor) {
+    this.shared.uBoost = factor;
+    this._pushShared();
+  }
+
   _pushShared() {
     for (const material of this.materials.values()) {
       material.uniforms.uScale.value = this.shared.uScale;
       material.uniforms.uAttenuate.value = this.shared.uAttenuate;
       material.uniforms.uRound.value = this.shared.uRound;
+      material.uniforms.uBoost.value = this.shared.uBoost;
     }
   }
 

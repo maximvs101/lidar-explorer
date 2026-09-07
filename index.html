@@ -39,7 +39,9 @@
       #scale.show { display: block; }
       #scalebar { height: 4px; background: var(--text); border-radius: 1px; margin-bottom: 3px;
                   transition: width .15s; }
-      #presets button { padding: 3px 8px; font-size: 11px; }
+      #presets button, #modes button { padding: 3px 8px; font-size: 11px; }
+      #modes { margin-bottom: 6px; }
+      #modes button.on { border-color: var(--accent); color: var(--accent); }
       .cls { display: flex; align-items: center; gap: 7px; margin: 2px 0; font-size: 12px;
              cursor: pointer; user-select: none; }
       .cls input { margin: 0; cursor: pointer; }
@@ -93,6 +95,10 @@
       <div id="tile"><span class="dim">aucun lieu sélectionné</span></div>
 
       <h2>Classes</h2>
+      <div id="modes">
+        <button id="mode-scan" class="on">lecture</button>
+        <button id="mode-model">maquette</button>
+      </div>
       <div id="presets">
         <button data-preset="tout">tout</button>
         <button data-preset="sol">sol</button>
