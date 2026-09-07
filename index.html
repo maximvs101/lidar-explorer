@@ -26,10 +26,13 @@
       #panel { padding: 14px 16px; overflow-y: auto; border-right: 1px solid var(--line); }
       #right { display: grid; grid-template-rows: 1fr 1fr; min-width: 0; min-height: 0; }
       #map { width: 100%; height: 100%; background: #10141a; }
-      #stage { display: grid; place-items: center; padding: 10px; min-height: 0;
-               border-top: 1px solid var(--line); }
-      canvas { background: #080a0e; border: 1px solid var(--line);
-               max-width: 100%; max-height: 100%; object-fit: contain; }
+      #stage { position: relative; min-height: 0; border-top: 1px solid var(--line);
+               background: #080a0e; }
+      #view { display: block; width: 100%; height: 100%; }
+      #hud { position: absolute; left: 8px; bottom: 8px; padding: 5px 9px; border-radius: 4px;
+             background: rgba(10, 13, 18, .82); border: 1px solid var(--line);
+             font-size: 11px; color: var(--dim); pointer-events: none; }
+      #hud b { color: var(--text); font-weight: 600; }
       h1 { font-size: 14px; margin: 0 0 3px; color: var(--accent); }
       p.sub { margin: 0 0 12px; color: var(--dim); font-size: 12px; }
       h2 { font-size: 11px; margin: 16px 0 5px; color: var(--dim);
@@ -81,7 +84,10 @@
     </div>
     <div id="right">
       <div id="map"></div>
-      <div id="stage"><canvas id="preview" width="700" height="700"></canvas></div>
+      <div id="stage">
+        <canvas id="view"></canvas>
+        <div id="hud">cliquez sur la carte pour choisir un lieu</div>
+      </div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>
