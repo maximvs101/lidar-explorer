@@ -30,14 +30,33 @@ se raffine selon la caméra, et les dalles voisines se chargent au déplacement.
   éviction des nœuds hors champ.
 - **Filtres de classe** instantanés : la classification vit sur le GPU, un octet
   par point indexant une palette.
+- **Canopée et audit** — un modèle de terrain se construit à partir des seuls
+  points de sol, d'où les hauteurs au-dessus du sol. L'audit y compare la
+  classification à trois contrôles objectifs : végétation haute posée au sol,
+  bâtiment sous le terrain, et surface d'eau non horizontale.
 - **Coloration au choix** — par classe, par **intensité** (réflectance, bornée
   automatiquement sur les centiles de la zone chargée), par **nombre de retours**
   (un tir multi-écho a traversé du feuillage), par **bande de vol** (les passes
   de l'avion se recouvrent, ce qui explique une densité trois fois supérieure à
   celle annoncée), par hauteur au-dessus du sol, ou en mode audit.
-- **Quatre presets** — lecture, relief, canopée, audit. L'éclairage de
-  profondeur et l'ombrage directionnel rendent le relief lisible sur un nuage
-  qui, faute de normales, paraîtrait plat.
+- **Quatre presets d'affichage**, qui règlent d'un clic nuancier, fond, source
+  de couleur et relief :
+
+  | preset | à quoi il sert |
+  |---|---|
+  | `lecture` | nuancier de classification sur fond sombre, sans post-traitement — la vue de référence |
+  | `relief` | nuancier neutre et ombrage appuyé : c'est la vue qui donne le plus à lire sur la structure du bâti |
+  | `canopée` | couleur par hauteur au-dessus du sol, du sol nu aux émergents, avec les statistiques de canopée |
+  | `audit` | contradictions de classification en rouge, avec le détail chiffré |
+
+  Ils ne fixent ni la taille ni la forme des points, ni le seuil de détail : ce
+  sont des préférences d'affichage, conservées d'un preset à l'autre pour qu'on
+  puisse comparer deux rendus sans les régler de nouveau.
+
+  L'éclairage de profondeur et l'ombrage directionnel rendent le relief lisible
+  sur un nuage qui, faute de normales, paraîtrait plat. C'est le seul
+  post-traitement conservé : tout ce qui relevait du rendu décoratif a été
+  retiré.
 
 ## Points de vigilance
 
