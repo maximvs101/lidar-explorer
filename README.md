@@ -3,6 +3,8 @@
 Explorer, mesurer et couper le nuage de points LiDAR HD de l'IGN, directement
 dans le navigateur.
 
+**→ [maximvs101.github.io/lidar-explorer](https://maximvs101.github.io/lidar-explorer/)**
+
 Les dalles sont diffusées au format **COPC**, le serveur de la Géoplateforme
 honore les requêtes `Range` et renvoie `access-control-allow-origin: *` : la page
 lit donc les données **directement chez l'IGN**, sans backend ni copie locale.
