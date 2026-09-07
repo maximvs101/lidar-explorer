@@ -223,9 +223,10 @@ export class Viewer {
       (preset.background & 0xff) / 255,
     );
 
-    // Points carres et grossis hors mode lecture : ils se joignent en surface au
-    // lieu de laisser voir le fond entre eux. Ronds et espaces, chaque
-    // interstice devient un trou noir sous l'ombrage de profondeur.
+    // Points carres hors mode lecture : ils se joignent bord a bord la ou des
+    // points ronds laissent des interstices. En revanche ils ne sont plus
+    // grossis — mesure faite, le grossissement ne bouchait plus rien et ne
+    // faisait qu'effacer la resolution qu'on est allé chercher dans la donnee.
     this.materials.setRound(preset.round ?? true);
     this.pointScale = preset.boost ?? 1;
     this.materials.setBoost(this.pointScale);
@@ -327,6 +328,19 @@ export class Viewer {
    * au prix du detail ; en deca le fond transparait, ce qui creuse des trous
    * noirs sous l'ombrage de profondeur.
    */
+  /**
+   * Seuil de raffinement, en pixels d'erreur a l'ecran.
+   *
+   * C'est le vrai levier de precision : sous ce seuil, raffiner n'apporterait
+   * plus rien de visible et le selecteur s'arrete. L'abaisser fait descendre
+   * plus bas dans l'octree — plus de points, plus fins — au prix du reseau et de
+   * la memoire. Grossir les points, a l'inverse, ne fait qu'effacer la
+   * resolution deja chargee.
+   */
+  setDetail(pixels) {
+    this.minScreenError = pixels;
+  }
+
   setPointScale(factor) {
     this.pointScale = factor;
     this.materials.setBoost(factor);

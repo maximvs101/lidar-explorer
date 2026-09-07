@@ -41,12 +41,13 @@
                   transition: width .15s; }
       #presets button, #modes button { padding: 3px 8px; font-size: 11px; }
       #modes { margin-bottom: 6px; }
-      #sizerow { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px;
+      #sizerow, #detailrow { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px;
                  font-size: 11px; color: var(--dim); }
-      #sizerow span { white-space: nowrap; }
-      #sizerow input { flex: 1; min-width: 0; accent-color: var(--accent); }
-      #sizerow output { min-width: 2.6em; text-align: right; color: var(--text);
-                        font-variant-numeric: tabular-nums; }
+      #sizerow span, #detailrow span { white-space: nowrap; }
+      #sizerow input, #detailrow input { flex: 1; min-width: 0; accent-color: var(--accent); }
+      #sizerow output, #detailrow output { min-width: 3.6em; text-align: right;
+                        color: var(--text); font-variant-numeric: tabular-nums; }
+      #detailhint { margin: 0 0 8px; }
       #modes button.on { border-color: var(--accent); color: var(--accent); }
       .cls { display: flex; align-items: center; gap: 7px; margin: 2px 0; font-size: 12px;
              cursor: pointer; user-select: none; }
@@ -104,9 +105,16 @@
       <div id="modes"></div>
       <label id="sizerow">
         <span>taille des points</span>
-        <input id="pointsize" type="range" min="0.4" max="4" step="0.05" value="1">
+        <input id="pointsize" type="range" min="0.4" max="2" step="0.05" value="1">
         <output id="pointsizeval">1,00</output>
       </label>
+      <label id="detailrow">
+        <span>seuil de détail</span>
+        <input id="detail" type="range" min="0.5" max="3" step="0.1" value="1.5">
+        <output id="detailval">1,5 px</output>
+      </label>
+      <p class="foot" id="detailhint">Plus le seuil est bas, plus l'application descend
+        dans l'octree : le nuage gagne en résolution et le nombre de points monte.</p>
       <div id="presets">
         <button data-preset="tout">tout</button>
         <button data-preset="sol">sol</button>

@@ -10,6 +10,13 @@ import { DEFAULT_PALETTE, MODEL_PALETTE } from './pointsMaterial.js';
  * OpenStreetMap et du WebGL sur nuage de points. Ce qui est repris est
  * l'organisation : des styles nommés que l'on bascule d'un clic, plutôt qu'une
  * douzaine de réglages épars.
+ *
+ * Aucun preset ne grossit les points. Ils l'ont fait un temps, pour éviter que
+ * le fond transparaisse entre eux ; mesure faite, ce grossissement ne corrige
+ * plus rien depuis que l'ombrage a été adouci — moins d'un point de pourcentage
+ * de trous en moins, à toutes les distances. Il ne restait que son inconvénient :
+ * un point plus large que son espacement recouvre son voisin, et c'est
+ * exactement la résolution qu'on est allé chercher dans la donnée qui s'efface.
  */
 
 /**
@@ -70,7 +77,7 @@ export const PRESETS = {
     shape: 'circle',
     radius: 450,
     round: false,
-    boost: 1.55,
+    boost: 1,
     diorama: { ...BASE },
   },
   plan: {
@@ -82,7 +89,7 @@ export const PRESETS = {
     shape: 'square',
     radius: 420,
     round: false,
-    boost: 1.6,
+    boost: 1,
     // Ombrage plus marqué et vignettage plus discret : on cherche le trait net
     // d'une carte dessinée, pas la douceur d'une maquette de résine. La teinte
     // varie davantage pour que les îlots voisins se distinguent.

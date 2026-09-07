@@ -32,6 +32,8 @@ const el = {
   modes: document.getElementById('modes'),
   pointSize: document.getElementById('pointsize'),
   pointSizeVal: document.getElementById('pointsizeval'),
+  detail: document.getElementById('detail'),
+  detailVal: document.getElementById('detailval'),
 };
 
 const fmtScale = (n) => n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -361,6 +363,12 @@ function setPreset(name) {
   el.pointSizeVal.textContent = fmtScale(viewer.pointScale);
   renderLegend();
 }
+
+el.detail.addEventListener('input', () => {
+  const px = Number(el.detail.value);
+  viewer.setDetail(px);
+  el.detailVal.textContent = `${px.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} px`;
+});
 
 el.pointSize.addEventListener('input', () => {
   const factor = Number(el.pointSize.value);
