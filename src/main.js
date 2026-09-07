@@ -32,6 +32,7 @@ const el = {
   modes: document.getElementById('modes'),
   pointSize: document.getElementById('pointsize'),
   pointSizeVal: document.getElementById('pointsizeval'),
+  round: document.getElementById('round'),
   detail: document.getElementById('detail'),
   detailVal: document.getElementById('detailval'),
   exportBtn: document.getElementById('export'),
@@ -409,6 +410,7 @@ function setPreset(name) {
   document.getElementById('stage').style.background = `#${bg}`;
   // Chaque preset a sa taille de points ; le curseur suit le preset choisi
   // plutot que d'imposer un reglage a tous.
+  el.round.checked = viewer.materials.shared.uRound > 0.5;
   el.pointSize.value = String(viewer.pointScale);
   el.pointSizeVal.textContent = fmtScale(viewer.pointScale);
   renderLegend();
@@ -418,6 +420,15 @@ el.detail.addEventListener('input', () => {
   const px = Number(el.detail.value);
   viewer.setDetail(px);
   el.detailVal.textContent = `${px.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} px`;
+});
+
+// Carré ou rond : un point OpenGL est un quad, le rond demande de rejeter les
+// pixels hors du disque. Le carré avait été retenu du temps où les points
+// étaient grossis et laissaient voir le fond entre eux ; mesure faite depuis
+// que ce grossissement a disparu, l'écart de trous ne dépasse plus 0,18 point.
+// Le choix est donc devenu esthétique, et il revient à qui regarde.
+el.round.addEventListener('change', () => {
+  viewer.materials.setRound(el.round.checked);
 });
 
 el.pointSize.addEventListener('input', () => {

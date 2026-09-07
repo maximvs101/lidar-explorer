@@ -48,6 +48,9 @@
       #sizerow output, #detailrow output { min-width: 3.6em; text-align: right;
                         color: var(--text); font-variant-numeric: tabular-nums; }
       #detailhint { margin: 0 0 8px; }
+      #roundrow { display: flex; align-items: center; gap: 7px; margin: 2px 0 6px;
+                  font-size: 11px; color: var(--dim); cursor: pointer; user-select: none; }
+      #roundrow input { margin: 0; cursor: pointer; accent-color: var(--accent); }
       #exportrow { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px;
                    font-size: 11px; color: var(--dim); }
       #exportrow select { background: var(--panel); color: var(--text);
@@ -126,6 +129,10 @@
         <span>taille des points</span>
         <input id="pointsize" type="range" min="0.4" max="2" step="0.05" value="1">
         <output id="pointsizeval">1,00</output>
+      </label>
+      <label id="roundrow">
+        <input id="round" type="checkbox">
+        <span>points ronds</span>
       </label>
       <label id="detailrow">
         <span>seuil de détail</span>
