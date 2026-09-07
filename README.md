@@ -1,7 +1,7 @@
 # Explorateur LiDAR HD
 
-Explorer le nuage de points LiDAR HD de l'IGN directement dans le navigateur, et
-en tirer des rendus de maquette.
+Explorer, mesurer et contrôler le nuage de points LiDAR HD de l'IGN
+directement dans le navigateur.
 
 Les dalles sont diffusées au format **COPC**, le serveur de la Géoplateforme
 honore les requêtes `Range` et renvoie `access-control-allow-origin: *` : la page
@@ -14,7 +14,7 @@ la structure d'une dalle de 171 Mo.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 99 tests
+npm test
 npm run build
 ```
 
@@ -35,6 +35,9 @@ se raffine selon la caméra, et les dalles voisines se chargent au déplacement.
   altitudes en NGF-IGN69. Le point sous le curseur est retrouvé en lisant le
   tampon de profondeur, ce qui coûte le même prix quel que soit le nombre de
   points et rend exactement ce que l'œil voit.
+- **Export d'image** jusqu'à quatre fois la résolution de l'écran. Les rayons
+  d'ombrage, exprimés en texels, sont mis à l'échelle du facteur d'export :
+  sans cela l'image produite ne ressemblerait pas à ce qu'on voyait.
 - **Canopée et audit** — un modèle de terrain se construit à partir des seuls
   points de sol, d'où les hauteurs au-dessus du sol. L'audit y compare la
   classification à trois contrôles objectifs : végétation haute posée au sol,
@@ -78,6 +81,18 @@ se raffine selon la caméra, et les dalles voisines se chargent au déplacement.
   livrée : il répond 200 avec une liste vide dans les deux cas.
 - La Géoplateforme plafonne à une dizaine de requêtes simultanées et rejette
   tout d'un coup au-delà ; la file d'attente est bornée à 4 avec reprise.
+
+## Vérifications
+
+La suite de tests couvre les modules purs — décodage COPC, sélection de niveau
+de détail, projection, modèle de terrain, audit, mesures. Elle est **éprouvée
+par mutation** : des défauts sont injectés un par un pour vérifier qu'elle les
+attrape, et plusieurs trous ont été trouvés ainsi, dont un test qui vérifiait sa
+propre convention au lieu de celle de la bibliothèque.
+
+Ce que les tests ne couvrent pas — le rendu, l'éviction GPU, le multi-dalles —
+dépend de WebGL et se vérifie dans le navigateur, en mutant dans les deux sens :
+un contrôle qui ne peut pas échouer ne prouve rien.
 
 ## Données et licences
 

@@ -506,7 +506,6 @@ el.detail.addEventListener('input', () => {
 el.colorMode.addEventListener('change', () => {
   const mode = el.colorMode.value;
   if (mode === 'hauteur' || mode === 'audit') viewer.buildTerrain({ force: true });
-  viewer.materials.setHeightMode(mode === 'hauteur', viewer.preset.heightMax ?? 30);
   viewer.materials.setColorMode(mode);
   if (mode === 'audit') viewer.runAudit({ force: true });
   if (mode === 'intensite') viewer.autoIntensityRange();

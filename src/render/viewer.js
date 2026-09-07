@@ -232,9 +232,7 @@ export class Viewer {
     const bilan = this.terrain.build();
     this._terrainBuiltAt = maintenant;
     this.materials.setTerrain(this.terrain);
-    if (this.preset.heightMode) {
-      this.materials.setHeightMode(true, this.preset.heightMax ?? 30);
-    }
+    if (this.preset.heightMax) this.materials.setHeightScale(this.preset.heightMax);
     this.terrainStats = {
       ...bilan,
       coverage: this.terrain.coverage(),
@@ -358,7 +356,7 @@ export class Viewer {
     // pret, on n'active rien plutot que de peindre du gris partout.
     // Un seul aiguillage : le preset nomme sa source de couleur.
     const mode = preset.colorMode ?? (preset.heightMode ? 'hauteur' : preset.auditMode ? 'audit' : 'classe');
-    this.materials.setHeightMode(mode === 'hauteur', preset.heightMax ?? 30);
+    this.materials.setHeightScale(preset.heightMax ?? 30);
     if (mode === 'hauteur' || mode === 'audit') this.buildTerrain({ force: true });
     this.materials.setColorMode(mode);
     if (mode === 'audit') this.runAudit({ force: true });
@@ -566,10 +564,11 @@ export class Viewer {
     // Le terrain se refige quand de nouveaux points de sol sont arrives ; la
     // methode porte son propre intervalle minimal, l'appeler a chaque image ne
     // coute donc rien la plupart du temps.
-    if (this.materials.shared.uHeightMode > 0.5 || this.materials.shared.uAuditMode > 0.5) {
-      this.buildTerrain();
-    }
-    if (this.materials.shared.uAuditMode > 0.5) this.runAudit();
+    // Les deux modes qui reposent sur le terrain le maintiennent a jour ;
+    // buildTerrain et runAudit portent chacun leur intervalle minimal.
+    const modeCourant = this.materials.shared.uColorMode;
+    if (modeCourant === 1 || modeCourant === 2) this.buildTerrain();
+    if (modeCourant === 2) this.runAudit();
 
     const selection = this.select();
     if (!selection) return null;

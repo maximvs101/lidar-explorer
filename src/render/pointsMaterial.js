@@ -76,9 +76,7 @@ const VERTEX = /* glsl */ `
   uniform sampler2D uTerrain;
   uniform vec2 uTerrainMin;
   uniform float uTerrainSize;
-  uniform float uHeightMode;
   uniform float uHeightMax;
-  uniform float uAuditMode;
   uniform float uColorMode;
   uniform vec2 uIntensityRange;
   varying vec3 vColor;
@@ -107,7 +105,6 @@ const VERTEX = /* glsl */ `
     vec3 rgb = clamp(abs(k * 6.0 - 3.0) - 1.0, 0.0, 1.0);
     return mix(vec3(0.55), rgb, 0.72); // desature : on veut distinguer, pas eblouir
   }
-
 
   void main() {
     vec4 entry = texture2D(uPalette, vec2((classification + 0.5) / 256.0, 0.5));
@@ -141,7 +138,7 @@ const VERTEX = /* glsl */ `
     // Mode audit : on ne peint en rouge que les points qui contredisent la
     // definition de leur propre classe, et seulement la ou le sol est connu.
     // Ailleurs, le gris dit « rien a redire », pas « verifie ».
-    if (uAuditMode > 0.5) {
+    if (uColorMode > 1.5 && uColorMode < 2.5) {
       vec2 uva = (position.xy - uTerrainMin) / uTerrainSize;
       vec3 neutre = vec3(0.72, 0.71, 0.68);
       if (uva.x < 0.0 || uva.x > 1.0 || uva.y < 0.0 || uva.y > 1.0) {
@@ -161,7 +158,7 @@ const VERTEX = /* glsl */ `
       }
     }
 
-    if (uHeightMode > 0.5) {
+    if (uColorMode > 0.5 && uColorMode < 1.5) {
       vec2 uv = (position.xy - uTerrainMin) / uTerrainSize;
       // Hors de la grille, l'echantillonnage rendrait le bord sans rien dire :
       // on le detecte explicitement plutot que de peindre une hauteur inventee.
@@ -210,7 +207,7 @@ export class PointsMaterialPool {
     this.materials = new Map(); // taille de point -> ShaderMaterial
     this.shared = {
       uScale: 1, uAttenuate: attenuate ? 1 : 0, uRound: round ? 1 : 0, uBoost: 1,
-      uHeightMode: 0, uHeightMax: 30, uAuditMode: 0, uColorMode: 0,
+      uHeightMax: 30, uColorMode: 0,
       uIntensityRange: [200, 1450],
     };
   }
@@ -251,10 +248,6 @@ export class PointsMaterialPool {
     this.texture.needsUpdate = true;
   }
 
-  isHidden(code) {
-    return this.hidden.has(code);
-  }
-
   /** Matériau pour une taille de point donnée ; un seul par taille distincte. */
   forSize(size) {
     const key = size.toFixed(3);
@@ -272,9 +265,7 @@ export class PointsMaterialPool {
         uTerrain: { value: this.terrainTexture },
         uTerrainMin: { value: new THREE.Vector2(0, 0) },
         uTerrainSize: { value: 1 },
-        uHeightMode: { value: this.shared.uHeightMode },
         uHeightMax: { value: this.shared.uHeightMax },
-        uAuditMode: { value: this.shared.uAuditMode },
         uColorMode: { value: this.shared.uColorMode },
         uIntensityRange: { value: new THREE.Vector2(...this.shared.uIntensityRange) },
       },
@@ -300,11 +291,6 @@ export class PointsMaterialPool {
     this._pushShared();
   }
 
-  setAttenuate(on) {
-    this.shared.uAttenuate = on ? 1 : 0;
-    this._pushShared();
-  }
-
   /**
    * Grossit les points sans toucher aux donnees.
    *
@@ -318,7 +304,6 @@ export class PointsMaterialPool {
     this._pushShared();
   }
 
-
   /**
    * Installe le modele de terrain servant au calcul des hauteurs.
    *
@@ -331,7 +316,6 @@ export class PointsMaterialPool {
     if (this.terrainTexture) this.terrainTexture.dispose();
     if (!grid) {
       this.terrainTexture = null;
-      this.shared.uHeightMode = 0;
       this._pushShared();
       return;
     }
@@ -356,9 +340,8 @@ export class PointsMaterialPool {
     }
   }
 
-  /** Colore par hauteur au-dessus du sol plutot que par classe. */
-  setHeightMode(on, maxHeight = 30) {
-    this.shared.uHeightMode = on && this.terrainTexture ? 1 : 0;
+  /** Borne haute de la rampe de hauteur, en metres. Le mode vient de setColorMode. */
+  setHeightScale(maxHeight) {
     this.shared.uHeightMax = maxHeight;
     this._pushShared();
   }
@@ -376,8 +359,6 @@ export class PointsMaterialPool {
     } else {
       this.shared.uColorMode = code;
     }
-    this.shared.uHeightMode = this.shared.uColorMode === COLOR_MODES.hauteur ? 1 : 0;
-    this.shared.uAuditMode = this.shared.uColorMode === COLOR_MODES.audit ? 1 : 0;
     this._pushShared();
   }
 
@@ -387,22 +368,13 @@ export class PointsMaterialPool {
     this._pushShared();
   }
 
-  /** Colore en rouge les points qui contredisent la definition de leur classe. */
-  setAuditMode(on) {
-    this.shared.uAuditMode = on && this.terrainTexture ? 1 : 0;
-    this._pushShared();
-  }
-
-
   _pushShared() {
     for (const material of this.materials.values()) {
       material.uniforms.uScale.value = this.shared.uScale;
       material.uniforms.uAttenuate.value = this.shared.uAttenuate;
       material.uniforms.uRound.value = this.shared.uRound;
       material.uniforms.uBoost.value = this.shared.uBoost;
-      material.uniforms.uHeightMode.value = this.shared.uHeightMode;
       material.uniforms.uHeightMax.value = this.shared.uHeightMax;
-      material.uniforms.uAuditMode.value = this.shared.uAuditMode;
       material.uniforms.uColorMode.value = this.shared.uColorMode;
       material.uniforms.uIntensityRange.value.set(
         this.shared.uIntensityRange[0], this.shared.uIntensityRange[1],
