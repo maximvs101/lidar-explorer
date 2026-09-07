@@ -713,6 +713,30 @@ function renderProgress() {
     (p.pending > 0 ? ` · ${p.pending} en vol` : '');
 }
 
+/**
+ * D'où vient le sol sous les points, en clair.
+ *
+ * Le MNT officiel est dérivé de la totalité des points de la dalle ; notre
+ * grille ne voit que le niveau de détail chargé et comble le reste par
+ * diffusion. La différence n'est pas cosmétique : sous un couvert dense, l'un
+ * mesure là où l'autre estime. L'afficher évite de prêter au second la
+ * précision du premier.
+ */
+function sourceTerrain() {
+  switch (viewer.mntState) {
+    case 'officiel':
+      return { libelle: `MNT IGN · ${viewer.mntCells} px`, warn: false };
+    case 'chargement':
+      return { libelle: 'points de sol (MNT en cours…)', warn: false };
+    case 'absent':
+      return { libelle: 'points de sol — MNT non couvert ici', warn: true };
+    case 'erreur':
+      return { libelle: 'points de sol — MNT indisponible', warn: true };
+    default:
+      return { libelle: 'points de sol', warn: false };
+  }
+}
+
 setInterval(() => {
   const s = viewer.stats;
   renderProgress();
@@ -731,7 +755,11 @@ setInterval(() => {
     const local = viewer.terrain?.filled
       ? viewer.terrain.coverageWithin([cible.x, cible.y], 400)
       : null;
+    // Deux sources possibles sous les mêmes chiffres : les confondre ferait
+    // passer une estimation par diffusion pour un relevé au demi-mètre.
+    const src = sourceTerrain();
     table(el.stats, [
+      ['source du sol', src.libelle, src.warn ? 'warn' : ''],
       ['terrain observé ici', local ? `${(100 * local.ratio).toFixed(1)} %` : '—',
         local && local.ratio < 0.35 ? 'warn' : ''],
       ['— sur toute la grille', t ? `${(100 * t.coverage).toFixed(1)} %` : '—'],
@@ -753,7 +781,9 @@ setInterval(() => {
     const a = viewer.auditStats;
     const pct = (v) => (Number.isFinite(v) ? `${v.toFixed(2)} %` : '—');
     const m = (v) => (Number.isFinite(v) ? `${v.toFixed(2)} m` : '—');
+    const srcAudit = sourceTerrain();
     table(el.stats, a ? [
+      ['source du sol', srcAudit.libelle, srcAudit.warn ? 'warn' : ''],
       ['points jugeables', fmt(a.testes)],
       ['— sol inconnu, non jugés', fmt(a.sansSol), a.sansSol > 0 ? 'warn' : ''],
       ['végétation haute au sol', `${fmt(a.vegetation.count)} · ${pct(a.vegetation.share)}`,

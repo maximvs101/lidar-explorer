@@ -1,22 +1,36 @@
 /**
- * Modèle de terrain local, construit à partir des seuls points classés « sol ».
+ * Modèles de terrain, et hauteurs au-dessus du sol.
  *
- * Il sert à mesurer une hauteur au-dessus du sol : celle d'un arbre, d'un toit.
  * Le nuage donne des altitudes absolues, or ce qui intéresse est presque
  * toujours la hauteur relative — un arbre de 25 m reste un arbre de 25 m qu'il
- * pousse au bord du fleuve ou sur la colline.
+ * pousse au bord du fleuve ou sur la colline. Il faut donc, sous chaque point,
+ * savoir où est le sol.
  *
- * Le défaut de la méthode est connu et il faut le mesurer plutôt que le taire :
- * sous un couvert dense, le laser atteint mal le sol. Les cellules sans aucun
- * point de sol sont comblées par diffusion depuis leurs voisines, ce qui reste
- * une estimation. `coverage()` dit quelle part de la grille a été réellement
+ * Deux sources répondent à cette question, et elles partagent ici la même
+ * géométrie de grille :
+ *
+ * - `TerrainGrid`, calculée à partir des seuls points classés « sol » du nuage
+ *   chargé. Son défaut est connu et il faut le mesurer plutôt que le taire :
+ *   sous un couvert dense, le laser atteint mal le sol, et les cellules sans
+ *   aucun point sont comblées par diffusion depuis leurs voisines.
+ * - `MntGrid` (voir `mnt.js`), le MNT officiel de l'IGN, dérivé du même LiDAR
+ *   mais de la totalité des points et non du seul niveau de détail affiché.
+ *
+ * Dans les deux cas `coverage()` dit quelle part de la grille a été réellement
  * observée, et c'est cette part qui qualifie la confiance des hauteurs.
  */
 
 /** Codes ASPRS considérés comme du sol. */
 export const GROUND_CODES = new Set([2]);
 
-export class TerrainGrid {
+/**
+ * Géométrie de grille et lectures communes aux deux sources de terrain.
+ *
+ * Rien ici ne dit d'où viennent les altitudes : c'est justement ce qui permet
+ * de substituer une source à l'autre sans que le rendu, l'audit ou la mesure
+ * aient à savoir laquelle est en place.
+ */
+export class SampledGrid {
   /**
    * @param {object} options
    * @param {number[]} options.center  centre de la grille, en repère scène
@@ -34,12 +48,11 @@ export class TerrainGrid {
     this.minX = center[0] - size / 2;
     this.minY = center[1] - size / 2;
 
-    this.sum = new Float64Array(cells * cells);
-    this.count = new Uint32Array(cells * cells);
     this.height = new Float32Array(cells * cells);
     this.known = new Uint8Array(cells * cells);
     this.observed = 0;
     this.filled = false;
+    this.source = 'inconnu';
   }
 
   index(x, y) {
@@ -47,6 +60,17 @@ export class TerrainGrid {
     const j = Math.floor((y - this.minY) / this.step);
     if (i < 0 || i >= this.cells || j < 0 || j >= this.cells) return -1;
     return j * this.cells + i;
+  }
+
+  /**
+   * Cette cellule a-t-elle été *mesurée* — par opposition à estimée ?
+   *
+   * La distinction est tout l'intérêt de `coverage()`, et elle ne se lit pas au
+   * même endroit selon la source : dans le nuage, une cellule comblée par
+   * diffusion est « connue » sans avoir jamais été vue.
+   */
+  observedAt(k) {
+    return this.known[k] === 1;
   }
 
   /**
@@ -72,8 +96,8 @@ export class TerrainGrid {
   /** Part de la grille réellement observée, avant tout comblement. */
   coverage() {
     let n = 0;
-    for (let k = 0; k < this.count.length; k += 1) if (this.count[k] > 0) n += 1;
-    return n / this.count.length;
+    for (let k = 0; k < this.known.length; k += 1) if (this.observedAt(k)) n += 1;
+    return n / this.known.length;
   }
 
   /**
@@ -97,10 +121,48 @@ export class TerrainGrid {
     for (let j = j0; j <= j1; j += 1) {
       for (let i = i0; i <= i1; i += 1) {
         total += 1;
-        if (this.count[j * this.cells + i] > 0) observees += 1;
+        if (this.observedAt(j * this.cells + i)) observees += 1;
       }
     }
     return { observed: observees, total, ratio: total > 0 ? observees / total : NaN };
+  }
+
+  /** Altitude du sol estimée en ce point, ou NaN hors zone connue. */
+  heightAt(x, y) {
+    const k = this.index(x, y);
+    if (k < 0 || !this.known[k]) return NaN;
+    return this.height[k];
+  }
+
+  /** Hauteur au-dessus du sol, ou NaN si le terrain y est inconnu. */
+  aboveGround(x, y, z) {
+    const sol = this.heightAt(x, y);
+    return Number.isNaN(sol) ? NaN : z - sol;
+  }
+}
+
+/**
+ * Terrain reconstruit depuis les points classés « sol » du nuage affiché.
+ *
+ * C'est le repli quand le MNT officiel n'est pas disponible sur la zone, et
+ * l'unique source hors ligne. Il ne voit que ce que le niveau de détail courant
+ * a chargé, ce qui suffit au relief mais dégrade sous le couvert.
+ */
+export class TerrainGrid extends SampledGrid {
+  constructor(options) {
+    super(options);
+    this.sum = new Float64Array(this.cells * this.cells);
+    this.count = new Uint32Array(this.cells * this.cells);
+    this.source = 'sol';
+  }
+
+  /**
+   * Ici « observée » veut dire « un point de sol y est tombé ». Une cellule
+   * comblée a `known = 1` mais `count = 0` : la lire dans `known` gonflerait la
+   * couverture de tout ce qu'on a précisément inventé.
+   */
+  observedAt(k) {
+    return this.count[k] > 0;
   }
 
   /**
@@ -163,19 +225,6 @@ export class TerrainGrid {
 
     this.filled = true;
     return { observed: this.observed, filled: this.count.length - restants, passes, restants };
-  }
-
-  /** Altitude du sol estimée en ce point, ou NaN hors zone connue. */
-  heightAt(x, y) {
-    const k = this.index(x, y);
-    if (k < 0 || !this.known[k]) return NaN;
-    return this.height[k];
-  }
-
-  /** Hauteur au-dessus du sol, ou NaN si le terrain y est inconnu. */
-  aboveGround(x, y, z) {
-    const sol = this.heightAt(x, y);
-    return Number.isNaN(sol) ? NaN : z - sol;
   }
 }
 

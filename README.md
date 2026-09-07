@@ -81,10 +81,15 @@ preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
 - **Export d'image** jusqu'à quatre fois la résolution de l'écran. Les rayons
   d'ombrage, exprimés en texels, sont mis à l'échelle du facteur d'export :
   sans cela l'image produite ne ressemblerait pas à ce qu'on voyait.
-- **Canopée et audit** — un modèle de terrain se construit à partir des seuls
-  points de sol, d'où les hauteurs au-dessus du sol. L'audit y compare la
-  classification à trois contrôles objectifs : végétation haute posée au sol,
-  bâtiment sous le terrain, et surface d'eau non horizontale.
+- **Canopée et audit** — les hauteurs au-dessus du sol s'appuient sur le **MNT
+  officiel de l'IGN**, demandé au service WMS sur l'emprise chargée, en float32
+  brut (`image/x-bil;bits=32`) : 4 Mo pour 3 km en 1024 cellules, soit une maille
+  de 2,9 m sans aucun trou. Le format évite d'ajouter un décodeur GeoTIFF.
+  Quand le raster n'est pas publié sur la zone, le terrain reconstruit depuis les
+  seuls points de sol prend le relais, et le panneau dit laquelle des deux
+  sources répond. L'audit y compare la classification à trois contrôles
+  objectifs : végétation haute posée au sol, bâtiment sous le terrain, et surface
+  d'eau non horizontale.
 - **Coloration au choix** — par classe, par **intensité** (réflectance, bornée
   automatiquement sur les centiles de la zone chargée), par **nombre de retours**
   (un tir multi-écho a traversé du feuillage), par **bande de vol** (les passes
@@ -117,6 +122,12 @@ preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
 - Les altitudes sont **orthométriques** (NGF-IGN69), pas ellipsoïdales : les
   comparer à un relevé GNSS brut demande une conversion de géoïde, de l'ordre de
   45 à 50 m en France.
+- Le MNT officiel est **plus complet, pas plus juste** : là où la grille
+  calculée avait vu le sol, les deux s'accordent à 19 cm près (p90). Son apport
+  est ailleurs — 100 % de couverture contre 39 à 46 % de cellules réellement
+  observées, donc plus rien d'inventé par diffusion, et un terrain complet dès
+  l'ouverture de la dalle au lieu de s'améliorer à mesure que les points
+  arrivent.
 - Les **parts de classes affichées** portent sur les points chargés, pas sur la
   composition du terrain. Mesuré sur emprise identique, la végétation haute pèse
   24,3 % au niveau 2 de l'octree contre 16,6 % tous niveaux réunis.
@@ -136,6 +147,12 @@ propre convention au lieu de celle de la bibliothèque.
 Ce que les tests ne couvrent pas — le rendu, l'éviction GPU, le multi-dalles —
 dépend de WebGL et se vérifie dans le navigateur, en mutant dans les deux sens :
 un contrôle qui ne peut pas échouer ne prouve rien.
+
+Le calage du MNT est contrôlé contre les points eux-mêmes : sur 35 434 points
+classés sol de la dalle de Toulouse, l'écart au raster a une médiane de −3,1 cm
+et 91 % restent sous 20 cm. Le témoin — la même lecture sur une grille
+volontairement retournée nord/sud — tombe à 7,3 % sous 20 cm : la mesure
+distingue donc bien un terrain calé d'un terrain qui ne l'est pas.
 
 ## Données et licences
 

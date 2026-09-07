@@ -7,6 +7,7 @@ import { ReliefRenderer } from './relief.js';
 import { ScenePicker } from './picker.js';
 import { histogram } from '../analysis/classStats.js';
 import { TerrainGrid, heightStats } from '../analysis/terrain.js';
+import { fetchMnt } from '../analysis/mnt.js';
 import { WaterPlanarity, classContradictions, summarise } from '../analysis/audit.js';
 
 /**
@@ -47,14 +48,28 @@ export class Viewer {
     this.scene.add(this.measureGroup);
     this._measureGeometries = 0;
     this.pointScale = 1;
-    // Grille de terrain : 3 km de cote en 512 cellules, soit ~5,9 m. Le sol
-    // varie peu a cette echelle, et une grille plus fine ferait exploser le
-    // cout du comblement, qui parcourt la grille entiere a chaque passe.
-    this.terrain = null;
+    // Terrain : 3 km de cote, deux sources possibles.
+    //
+    // Le MNT officiel de l'IGN est prefere des qu'il repond — il est derive de
+    // la totalite des points, pas du seul niveau de detail charge, et n'a donc
+    // aucun trou sous le couvert. On le prend en 1024 cellules (2,9 m), le pas
+    // que le service rend en quelques secondes pour 4 Mo.
+    //
+    // La grille calculee depuis les points de sol reste construite en parallele
+    // et sert de repli : le programme LiDAR HD est en cours, et une dalle de
+    // points peut exister avant son raster. Elle est en 512 cellules (5,9 m),
+    // le comblement des trous parcourant la grille entiere a chaque passe.
+    this.groundGrid = null;
+    this.mnt = null;
+    this.mntState = 'idle'; // idle | chargement | officiel | absent | erreur
+    this.mntError = null;
+    this._mntAbort = null;
     this.terrainCells = 512;
+    this.mntCells = 1024;
     this.terrainSize = 3000;
     this.terrainStats = null;
     this._terrainBuiltAt = 0;
+    this._publishedTerrain = null;
     this.auditStats = null;
     this._auditAt = 0;
     this.preset = getPreset('lecture');
@@ -118,8 +133,9 @@ export class Viewer {
     this.clear();
     this.origin = tile.origin;
     // La grille suit le repere de scene, comme les points.
-    this.terrain = new TerrainGrid({ center: [0, 0], size: this.terrainSize, cells: this.terrainCells });
+    this.groundGrid = new TerrainGrid({ center: [0, 0], size: this.terrainSize, cells: this.terrainCells });
     this.terrainStats = null;
+    this.loadOfficialTerrain();
     this.addTile(tile, nodes);
 
     const { bounds } = tile.header;
@@ -211,35 +227,120 @@ export class Viewer {
     }
     // Le terrain se nourrit de tout ce qui passe, y compris des noeuds qui
     // seront evinces ensuite : le sol ne bouge pas, autant le garder.
-    this.terrain?.addPoints(positions, classification);
+    // Meme quand le MNT officiel est en place : il peut manquer sur la dalle
+    // suivante, et reconstituer la grille apres coup demanderait de reparcourir
+    // tout ce qui a deja ete charge.
+    this.groundGrid?.addPoints(positions, classification);
     this.stats.nodesInScene = this.loaded.size;
     this.stats.pointsInScene += classification.length;
   }
 
   /**
+   * Source de terrain effectivement en service.
+   *
+   * Le MNT des qu'il est la, la grille calculee sinon. Tout le reste — rendu,
+   * audit, canopee, mesure — passe par ici sans savoir laquelle repond.
+   */
+  get terrain() {
+    return this.mnt ?? this.groundGrid;
+  }
+
+  /**
+   * Demande le MNT officiel sur l'emprise de la scene.
+   *
+   * Un echec ou une absence de couverture ne bloque rien : la grille calculee
+   * continue de servir, et `mntState` dit laquelle est en place. Taire la
+   * substitution serait donner une precision de 50 cm pour une estimation.
+   */
+  async loadOfficialTerrain() {
+    if (!this.origin) return null;
+    this._mntAbort?.abort();
+    const controle = new AbortController();
+    this._mntAbort = controle;
+    this.mnt = null;
+    this.mntError = null;
+    this.mntState = 'chargement';
+
+    try {
+      const grille = await fetchMnt({
+        center: [0, 0],
+        size: this.terrainSize,
+        cells: this.mntCells,
+        origin: this.origin,
+        signal: controle.signal,
+      });
+      if (controle.signal.aborted) return null;
+      if (!grille) {
+        this.mntState = 'absent';
+        return null;
+      }
+      this.mnt = grille;
+      this.mntState = 'officiel';
+      // Le terrain change sous les pieds du rendu : on republie tout de suite
+      // plutot que d'attendre le prochain passage, sinon les hauteurs affichees
+      // resteraient celles de la grille calculee sans que rien ne le dise.
+      this.buildTerrain({ force: true });
+      return grille;
+    } catch (erreur) {
+      if (controle.signal.aborted) return null;
+      this.mntState = 'erreur';
+      this.mntError = erreur.message;
+      return null;
+    }
+  }
+
+  /**
    * Fige le terrain et le publie au rendu.
    *
-   * Le comblement des trous parcourt la grille entiere a chaque passe, donc on
-   * ne le refait pas a chaque noeud recu : un intervalle minimal suffit, le sol
-   * n'ayant aucune raison de changer entre deux images.
+   * Avec le MNT officiel il n'y a rien a figer : la grille arrive complete. Il
+   * reste a la televerser une fois — d'ou le garde sur la derniere publiee, la
+   * texture pesant 4 Mo qu'il serait absurde de reconstruire a chaque image.
+   *
+   * Avec la grille calculee, le comblement des trous parcourt la grille entiere
+   * a chaque passe : on ne le refait pas a chaque noeud recu, un intervalle
+   * minimal suffit, le sol n'ayant aucune raison de changer entre deux images.
    */
   buildTerrain({ minInterval = 700, force = false } = {}) {
-    if (!this.terrain) return null;
+    const grille = this.terrain;
+    if (!grille) return null;
+
+    if (grille.source === 'mnt') {
+      if (this._publishedTerrain === grille && !force) return this.terrainStats;
+      if (this._publishedTerrain !== grille) this._publish(grille);
+      this.terrainStats = {
+        source: 'mnt',
+        observed: grille.observed,
+        filled: grille.observed,
+        passes: 0,
+        restants: grille.cells * grille.cells - grille.observed,
+        coverage: grille.coverage(),
+        cells: grille.cells,
+        step: grille.step,
+      };
+      return this.terrainStats;
+    }
+
     const maintenant = performance.now();
-    if (!force && this.terrain.filled) return this.terrainStats;
+    if (!force && grille.filled && this._publishedTerrain === grille) return this.terrainStats;
     if (!force && maintenant - this._terrainBuiltAt < minInterval) return this.terrainStats;
 
-    const bilan = this.terrain.build();
+    const bilan = grille.build();
     this._terrainBuiltAt = maintenant;
-    this.materials.setTerrain(this.terrain);
-    if (this.preset.heightMax) this.materials.setHeightScale(this.preset.heightMax);
+    this._publish(grille);
     this.terrainStats = {
       ...bilan,
-      coverage: this.terrain.coverage(),
-      cells: this.terrain.cells,
-      step: this.terrain.step,
+      source: 'sol',
+      coverage: grille.coverage(),
+      cells: grille.cells,
+      step: grille.step,
     };
     return this.terrainStats;
+  }
+
+  _publish(grille) {
+    this.materials.setTerrain(grille);
+    this._publishedTerrain = grille;
+    if (this.preset.heightMax) this.materials.setHeightScale(this.preset.heightMax);
   }
 
   /**
@@ -550,7 +651,13 @@ export class Viewer {
 
   clear() {
     this.clearMeasure();
-        this.terrain = null;
+    this._mntAbort?.abort();
+    this._mntAbort = null;
+    this.groundGrid = null;
+    this.mnt = null;
+    this.mntState = 'idle';
+    this.mntError = null;
+    this._publishedTerrain = null;
     this.terrainStats = null;
     this.auditStats = null;
     this.materials.setTerrain(null);
