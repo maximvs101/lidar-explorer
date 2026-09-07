@@ -129,4 +129,6 @@ Logiciels embarqués : **Three.js** (MIT) pour le rendu, **laz-perf**
 (BSD-2-Clause) pour la carte, **proj4** (MIT) pour le Lambert-93. Construit avec
 Vite, en JavaScript sans framework.
 
-Le code de ce dépôt est sous [licence MIT](LICENSE).
+Le code de ce dépôt est sous [licence MIT](LICENSE). Les **données** n'en
+relèvent pas : elles restent sous Licence Ouverte Etalab 2.0, et rien n'autorise
+à les réhéberger sans en citer le producteur.
