@@ -322,14 +322,6 @@ export class Viewer {
   }
 
   /**
-   * Bascule entre lecture technique et rendu maquette.
-   *
-   * Les deux modes lisent exactement les memes points : seuls changent le
-   * nuancier, le fond et les passes de post-traitement. C'est ce qui permet de
-   * comparer les deux rendus sur une scene identique, et donc de mesurer ce que
-   * l'habillage apporte vraiment.
-   */
-  /**
    * Applique un preset : nuancier, fond, decoupe, socle et post-traitement.
    *
    * Tous les presets lisent exactement les memes points — rien n'est recharge,
@@ -387,11 +379,6 @@ export class Viewer {
       this.materials.setClip(null, 0);
       this._removePlinth();
     }
-  }
-
-  /** Compatibilite : l'ancien interrupteur bascule entre deux presets. */
-  setDiorama(on) {
-    this.applyPreset(on ? 'maquette' : 'lecture');
   }
 
   /**

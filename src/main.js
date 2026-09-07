@@ -467,8 +467,6 @@ el.modes.addEventListener('click', (event) => {
   if (name) setPreset(name);
 });
 
-/** Compatibilité avec les vérifications déjà écrites. */
-const setMode = (on) => setPreset(on ? 'maquette' : 'lecture');
 
 el.legend.addEventListener('change', (event) => {
   const code = Number(event.target.dataset.code);
@@ -607,7 +605,7 @@ setInterval(() => {
         // envoi au GPU. On exige donc l'égalité dès qu'il y a des nœuds — c'est
         // ce qui révèle un dispose() manquant, invisible autrement.
         label: 'Géométries GPU alignées sur les nœuds affichés',
-        // Le socle du mode maquette est une géométrie de plus, qui n'est pas un
+        // Le socle des presets qui découpent est une géométrie de plus, qui n'est pas un
         // nœud : sans ce décompte il passerait pour une fuite.
         pass:
           s.nodesInScene === 0
@@ -633,7 +631,6 @@ window.__renderLegend = renderLegend;
 window.__renderScale = renderScale;
 window.__extend = extendToNeighbours;
 window.__maybeExtend = maybeExtend;
-window.__setMode = setMode;
 window.__setPreset = setPreset;
 window.__setPointScale = (f) => { el.pointSize.value = String(f); el.pointSize.dispatchEvent(new Event('input')); };
 window.__picker = picker;

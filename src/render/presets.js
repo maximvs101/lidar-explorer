@@ -1,4 +1,4 @@
-import { DEFAULT_PALETTE, MODEL_PALETTE } from './pointsMaterial.js';
+import { DEFAULT_PALETTE, NEUTRAL_PALETTE } from './pointsMaterial.js';
 
 /**
  * Presets d'affichage : une configuration nommée regroupant forme de découpe,
@@ -132,32 +132,9 @@ export const PRESETS = {
     shape: null,
     tint: 0,
   },
-  maquette: {
-    label: 'maquette',
-    palette: MODEL_PALETTE,
-    background: 0xece7dd,
-    plinth: 0xcabfa8,
-    post: true,
-    shape: 'circle',
-    radius: 450,
-    diorama: { ...BASE },
-  },
-  plan: {
-    label: 'plan carré',
-    palette: PLAN_PALETTE,
-    background: 0xf2ece0,
-    plinth: 0xd8c9ac,
-    post: true,
-    shape: 'square',
-    radius: 420,
-    // Ombrage plus marqué et vignettage plus discret : on cherche le trait net
-    // d'une carte dessinée, pas la douceur d'une maquette de résine. La teinte
-    // varie davantage pour que les îlots voisins se distinguent.
-    diorama: { ...BASE, strength: 22, vignette: 0.16, saturation: 1.24, tint: 0.24, lightAmount: 0.62 },
-  },
   canopee: {
     label: 'canopée',
-    palette: MODEL_PALETTE,
+    palette: NEUTRAL_PALETTE,
     background: 0xf4f1e8,
     post: true,
     shape: null,
@@ -170,7 +147,7 @@ export const PRESETS = {
   },
   audit: {
     label: 'audit',
-    palette: MODEL_PALETTE,
+    palette: NEUTRAL_PALETTE,
     background: 0xf6f5f2,
     post: false,
     shape: null,

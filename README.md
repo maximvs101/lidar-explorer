@@ -35,9 +35,9 @@ se raffine selon la caméra, et les dalles voisines se chargent au déplacement.
   (un tir multi-écho a traversé du feuillage), par **bande de vol** (les passes
   de l'avion se recouvrent, ce qui explique une densité trois fois supérieure à
   celle annoncée), par hauteur au-dessus du sol, ou en mode audit.
-- **Six presets de rendu** — lecture technique, maquette, plan carré, peach,
-  auburn, citrus — avec éclairage de profondeur, ombrage directionnel, découpe
-  circulaire ou carrée et socle.
+- **Presets d'affichage** — lecture technique, canopée, audit, et trois
+  nuanciers empruntés à prettymapp, avec éclairage de profondeur et ombrage
+  directionnel pour rendre le relief lisible sur un nuage sans normales.
 
 ## Points de vigilance
 

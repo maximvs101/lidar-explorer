@@ -25,15 +25,14 @@ export const DEFAULT_PALETTE = {
   67: [130, 130, 135],
 };
 /**
- * Palette « maquette » : des matières plutôt que des codes.
+ * Palette neutre, pour les modes d'analyse.
  *
- * Le nuancier de classification est fait pour distinguer, pas pour être beau —
- * ses couleurs saturées sur fond noir donnent un rendu d'instrument. Ici on vise
- * le carton-plume et la résine : socle sable, bâtiments crème, mousse de
- * modélisme. Le contraste ne vient plus de la couleur mais du relief calculé par
- * l'éclairage de profondeur, ce qui laisse la palette rester douce.
+ * Le nuancier de classification est fait pour distinguer les classes ; il sature
+ * l'image dès qu'on veut lire autre chose. Celui-ci reste discret sur fond clair
+ * pour que l'information vienne d'ailleurs — hauteur, retours, ombrage de
+ * profondeur — sans que la couleur de classe entre en concurrence avec elle.
  */
-export const MODEL_PALETTE = {
+export const NEUTRAL_PALETTE = {
   1: [176, 170, 160],
   2: [214, 198, 172],
   3: [156, 178, 124],
