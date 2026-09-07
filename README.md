@@ -35,9 +35,9 @@ se raffine selon la caméra, et les dalles voisines se chargent au déplacement.
   (un tir multi-écho a traversé du feuillage), par **bande de vol** (les passes
   de l'avion se recouvrent, ce qui explique une densité trois fois supérieure à
   celle annoncée), par hauteur au-dessus du sol, ou en mode audit.
-- **Presets d'affichage** — lecture technique, canopée, audit, et trois
-  nuanciers empruntés à prettymapp, avec éclairage de profondeur et ombrage
-  directionnel pour rendre le relief lisible sur un nuage sans normales.
+- **Quatre presets** — lecture, relief, canopée, audit. L'éclairage de
+  profondeur et l'ombrage directionnel rendent le relief lisible sur un nuage
+  qui, faute de normales, paraîtrait plat.
 
 ## Points de vigilance
 
@@ -56,14 +56,11 @@ se raffine selon la caméra, et les dalles voisines se chargent au déplacement.
 
 - **LiDAR HD, Plan IGN, index des dalles** : © IGN — Géoplateforme, sous
   [Licence Ouverte Etalab 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence/).
-- Les palettes `peach`, `auburn` et `citrus` reprennent les valeurs de couleur de
-  [prettymapp](https://github.com/chrieke/prettymapp) de Christoph Rieke, sous
-  licence MIT, transposées de ses catégories OpenStreetMap vers les classes
-  ASPRS du LiDAR. Aucun code n'en est repris.
-- L'idée de la découpe circulaire et des styles nommés vient de
-  [prettymaps](https://github.com/marceloprates/prettymaps) de Marcelo Prates.
-  Ce projet étant sous AGPL-3.0, **rien de son code n'est utilisé** — seules des
-  idées visuelles, qui ne sont pas protégeables.
+- L'organisation en styles nommés vient de
+  [prettymaps](https://github.com/marceloprates/prettymaps) et de
+  [prettymapp](https://github.com/chrieke/prettymapp). Aucun code ni aucune
+  couleur n'en est repris : les nuanciers décoratifs ont été retirés lors du
+  recentrage sur l'analyse.
 
 ## Stack
 

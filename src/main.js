@@ -605,15 +605,15 @@ setInterval(() => {
         // envoi au GPU. On exige donc l'égalité dès qu'il y a des nœuds — c'est
         // ce qui révèle un dispose() manquant, invisible autrement.
         label: 'Géométries GPU alignées sur les nœuds affichés',
-        // Le socle des presets qui découpent est une géométrie de plus, qui n'est pas un
-        // nœud : sans ce décompte il passerait pour une fuite.
+        // Le quad plein écran de la passe de relief est une géométrie de plus,
+        // qui n'est pas un nœud : sans ce décompte il passerait pour une fuite.
         pass:
           s.nodesInScene === 0
             ? viewer.memory().geometries === viewer.extraGeometries
             : viewer.memory().geometries === s.nodesInScene + viewer.extraGeometries,
         detail:
           `${viewer.memory().geometries} géométries pour ${s.nodesInScene} nœuds` +
-          (viewer.extraGeometries ? ' + socle' : '') + ` · ${s.evicted} évictions`,
+          (viewer.extraGeometries ? ' + relief' : '') + ` · ${s.evicted} évictions`,
       },
       {
         label: 'Aucun quota dépassé',

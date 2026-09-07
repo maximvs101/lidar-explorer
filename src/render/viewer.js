@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { diffSelection, selectAcross } from '../lod/selector.js';
 import { PointsMaterialPool } from './pointsMaterial.js';
 import { PRESETS, getPreset } from './presets.js';
-import { DioramaRenderer } from './diorama.js';
+import { ReliefRenderer } from './relief.js';
 import { histogram } from '../analysis/classStats.js';
 import { TerrainGrid, heightStats } from '../analysis/terrain.js';
 import { WaterPlanarity, classContradictions, summarise } from '../analysis/audit.js';
@@ -38,12 +38,8 @@ export class Viewer {
     this.scene.add(this.group);
 
     this.materials = new PointsMaterialPool();
-    this.diorama = new DioramaRenderer(this.renderer);
-    this.dioramaOn = false;
-    this.plinth = null;
-    this.clipRadius = 450;
-    this.clipCenter = [0, 0];
-    this.clipShape = null;
+    this.relief = new ReliefRenderer(this.renderer);
+    this.reliefOn = false;
     this.pointScale = 1;
     // Grille de terrain : 3 km de cote en 512 cellules, soit ~5,9 m. Le sol
     // varie peu a cette echelle, et une grille plus fine ferait exploser le
@@ -107,7 +103,7 @@ export class Viewer {
       viewportHeight: this.renderer.domElement.height,
       fovRadians: (this.camera.fov * Math.PI) / 180,
     });
-    this.diorama.setSize(this.renderer.domElement.width, this.renderer.domElement.height);
+    this.relief.setSize(this.renderer.domElement.width, this.renderer.domElement.height);
     this.sized = true;
   }
 
@@ -332,18 +328,12 @@ export class Viewer {
     const preset = getPreset(name);
     this.preset = preset;
     this.presetName = PRESETS[name] ? name : 'lecture';
-    this.dioramaOn = Boolean(preset.post);
+    this.reliefOn = Boolean(preset.post);
 
     this.materials.setPalette(preset.palette);
     this.renderer.setClearColor(preset.background, 1);
-    this.diorama.background.set(preset.background);
-    // Octets bruts, pas THREE.Color : celui-ci rend du lineaire et le fond
-    // ressortirait beaucoup trop sombre.
-    this.diorama.edlMaterial.uniforms.uBackground.value.set(
-      ((preset.background >> 16) & 0xff) / 255,
-      ((preset.background >> 8) & 0xff) / 255,
-      (preset.background & 0xff) / 255,
-    );
+    
+    this.relief.setBackground(preset.background);
 
     // Taille et forme des points ne sont PAS touchees ici : ce sont des
     // preferences d'affichage, pas des attributs de style. Les ecraser a chaque
@@ -356,8 +346,7 @@ export class Viewer {
       this.materials.setBoost(this.pointScale);
     }
 
-    if (preset.diorama) this.diorama.set(preset.diorama);
-    this.materials.setTint(preset.tint ?? preset.diorama?.tint ?? 0);
+    if (preset.relief) this.relief.set(preset.relief);
 
     // La couleur par hauteur remplace la couleur par classe ; sans terrain
     // pret, on n'active rien plutot que de peindre du gris partout.
@@ -369,84 +358,23 @@ export class Viewer {
     if (mode === 'audit') this.runAudit({ force: true });
     if (mode === 'intensite') this.autoIntensityRange();
 
-    this.clipShape = preset.shape ?? null;
-    if (this.clipShape) {
-      this.clipRadius = preset.radius ?? this.clipRadius;
-      this.clipCenter = [this.controls.target.x, this.controls.target.y];
-      this.materials.setClip(this.clipCenter, this.clipRadius, this.clipShape);
-      this._buildPlinth();
-    } else {
-      this.materials.setClip(null, 0);
-      this._removePlinth();
-    }
   }
+
 
   /**
-   * Socle du diorama : un cylindre sous le nuage, du meme rayon que la decoupe.
-   *
-   * C'est lui qui fait basculer la lecture de « bout de territoire » a « objet
-   * pose sur une table ». Sans socle, la decoupe circulaire donne seulement un
-   * nuage amoute ; avec, l'epaisseur visible sous le terrain donne l'echelle et
-   * la matiere.
-   */
-  _buildPlinth() {
-    this._removePlinth();
-    const entry = this.tiles.get([...this.tiles.keys()][0]);
-    if (!entry) return;
-    const { bounds } = entry.tile.header;
-    const oz = this.origin[2];
-    const floor = bounds.minZ - oz;
-    const thickness = Math.max(this.clipRadius * 0.16, 25);
-
-    const r = this.clipRadius;
-    let geometry;
-    if (this.clipShape === 'square') {
-      geometry = new THREE.BoxGeometry(r * 2, r * 2, thickness);
-    } else {
-      geometry = new THREE.CylinderGeometry(r, r, thickness, 96, 1, false);
-      geometry.rotateX(Math.PI / 2); // l'axe du cylindre est Y chez Three, Z chez nous
-    }
-    geometry.translate(this.clipCenter[0], this.clipCenter[1], floor - thickness / 2 + 1);
-
-    this.plinth = new THREE.Mesh(
-      geometry,
-      new THREE.MeshBasicMaterial({ color: this.preset.plinth ?? 0xcabfa8 }),
-    );
-    this.plinth.frustumCulled = false;
-    this.scene.add(this.plinth);
-  }
-
-  _removePlinth() {
-    if (!this.plinth) return;
-    this.scene.remove(this.plinth);
-    this.plinth.geometry.dispose();
-    this.plinth.material.dispose();
-    this.plinth = null;
-  }
-
-  /**
-   * Geometries que le rendu ajoute en plus des noeuds de points.
-   * Le controle anti-fuite compare `renderer.info` au nombre de noeuds : sans
-   * ce decompte, le socle passerait pour une fuite.
+   * Geometries que le rendu ajoute en plus des noeuds de points : le quad plein
+   * ecran de la passe de relief, qui reste alloue une fois qu'il a servi.
+   * `renderer.info` compte ce qui est sur le GPU, pas ce qui vient d'etre
+   * dessine — sans ce decompte, le controle anti-fuite crierait a tort.
    */
   get extraGeometries() {
-    // Le socle, plus le quad plein ecran du post-traitement : celui-ci reste
-    // alloue une fois qu'il a servi, y compris apres retour en mode lecture.
-    return (this.plinth ? 1 : 0) + (this.diorama.uploaded ? 1 : 0);
+    return this.relief.uploaded ? 1 : 0;
   }
 
-  /** Demi-cote ou rayon de la decoupe, en metres. */
-  setClipRadius(radius) {
-    this.clipRadius = radius;
-    if (this.clipShape) {
-      this.materials.setClip(this.clipCenter, radius, this.clipShape);
-      this._buildPlinth();
-    }
-  }
 
   /** Une seule voie de rendu, pour que tout le reste ignore le mode courant. */
   draw() {
-    if (this.dioramaOn) this.diorama.render(this.scene, this.camera);
+    if (this.reliefOn) this.relief.render(this.scene, this.camera);
     else this.renderer.render(this.scene, this.camera);
   }
 
@@ -515,8 +443,7 @@ export class Viewer {
   }
 
   clear() {
-    this._removePlinth();
-    this.terrain = null;
+        this.terrain = null;
     this.terrainStats = null;
     this.auditStats = null;
     this.materials.setTerrain(null);
@@ -630,7 +557,7 @@ export class Viewer {
 
     const cible = { w: Math.round(largeur * scale), h: Math.round(hauteur * scale) };
     const ratioPixel = this.renderer.getPixelRatio();
-    const reglages = { ...this.diorama.settings };
+    const reglages = { ...this.relief.settings };
 
     try {
       this.renderer.setPixelRatio(1);
@@ -641,11 +568,10 @@ export class Viewer {
         viewportHeight: cible.h,
         fovRadians: (this.camera.fov * Math.PI) / 180,
       });
-      this.diorama.setSize(cible.w, cible.h);
-      this.diorama.set({
+      this.relief.setSize(cible.w, cible.h);
+      this.relief.set({
         radius: reglages.radius * scale,
         lightSpread: reglages.lightSpread * scale,
-        tiltAmount: reglages.tiltAmount * scale,
       });
 
       this.draw();
@@ -654,7 +580,7 @@ export class Viewer {
       });
       return { blob, width: cible.w, height: cible.h };
     } finally {
-      this.diorama.set(reglages);
+      this.relief.set(reglages);
       this.renderer.setPixelRatio(ratioPixel);
       this.resize();
       this.draw();
@@ -752,8 +678,7 @@ export class Viewer {
     this._observer.disconnect();
     this.clear();
     this.controls.dispose();
-    this._removePlinth();
-    this.diorama.dispose();
+        this.relief.dispose();
     this.materials.dispose();
     this.renderer.dispose();
   }

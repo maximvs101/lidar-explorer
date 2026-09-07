@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PALETTE, NEUTRAL_PALETTE } from '../src/render/pointsMaterial.js';
-import { DIORAMA_DEFAULTS, lightVector } from '../src/render/diorama.js';
+import { RELIEF_DEFAULTS, lightVector } from '../src/render/relief.js';
 import { PRESETS, PRESET_NAMES, getPreset } from '../src/render/presets.js';
 import { CLASS_NAMES } from '../src/analysis/classStats.js';
 
@@ -58,16 +58,18 @@ describe('réglages du diorama', () => {
   it('gardent un rayon assez large pour lire les structures', () => {
     // En dessous de ~2 texels, l'ombrage suit le contour de chaque point et le
     // rendu part en billes au lieu de dégager les volumes.
-    expect(DIORAMA_DEFAULTS.radius).toBeGreaterThanOrEqual(2);
+    expect(RELIEF_DEFAULTS.radius).toBeGreaterThanOrEqual(2);
   });
 
-  it('restent dans des bornes qui produisent une image regardable', () => {
-    expect(DIORAMA_DEFAULTS.strength).toBeGreaterThan(0);
-    expect(DIORAMA_DEFAULTS.saturation).toBeGreaterThanOrEqual(1);
-    expect(DIORAMA_DEFAULTS.vignette).toBeLessThan(0.5);
-    expect(DIORAMA_DEFAULTS.tiltFocus).toBeGreaterThan(0);
-    expect(DIORAMA_DEFAULTS.tiltFocus).toBeLessThan(1);
-    expect(DIORAMA_DEFAULTS.tiltAmount).toBeLessThanOrEqual(1);
+  it('restent dans des bornes qui produisent une image lisible', () => {
+    expect(RELIEF_DEFAULTS.strength).toBeGreaterThan(0);
+    expect(RELIEF_DEFAULTS.lightAmount).toBeGreaterThanOrEqual(0);
+    expect(RELIEF_DEFAULTS.lightAmount).toBeLessThanOrEqual(1);
+    expect(RELIEF_DEFAULTS.lightAltitude).toBeGreaterThan(0);
+    expect(RELIEF_DEFAULTS.lightAltitude).toBeLessThan(90);
+    // Six texels : en deçà, le gradient de profondeur ne mesure que le bruit
+    // entre points voisins, pas une surface.
+    expect(RELIEF_DEFAULTS.lightSpread).toBeGreaterThanOrEqual(4);
   });
 });
 
@@ -127,35 +129,26 @@ describe('presets d’affichage', () => {
     }
   });
 
-  it('n’utilisent que des formes de découpe connues', () => {
-    for (const name of PRESET_NAMES) {
-      expect([null, undefined, 'circle', 'square']).toContain(PRESETS[name].shape);
-    }
-  });
 
-  it('donnent un socle et un rayon à tout preset qui découpe', () => {
-    // Découper sans socle laisse un nuage amputé qui flotte ; découper sans
-    // rayon désactive silencieusement la découpe.
-    for (const name of PRESET_NAMES) {
-      const preset = PRESETS[name];
-      if (!preset.shape) continue;
-      expect(preset.radius, `${name}: rayon`).toBeGreaterThan(0);
-      expect(typeof preset.plinth, `${name}: socle`).toBe('number');
-    }
-  });
 
-  it('accompagnent tout post-traitement de ses réglages', () => {
+  it('accompagnent tout relief de ses réglages', () => {
     for (const name of PRESET_NAMES) {
       const preset = PRESETS[name];
       if (!preset.post) continue;
-      expect(preset.diorama, `${name}: réglages`).toBeTruthy();
-      expect(preset.diorama.radius, `${name}: rayon d'ombrage`).toBeGreaterThanOrEqual(2);
+      expect(preset.relief, `${name}: réglages`).toBeTruthy();
+      expect(preset.relief.radius, `${name}: rayon d'ombrage`).toBeGreaterThanOrEqual(2);
     }
   });
 
-  it('laisse le mode lecture sans découpe ni post-traitement', () => {
-    expect(PRESETS.lecture.shape ?? null).toBeNull();
+  it('laisse le mode lecture sans post-traitement', () => {
     expect(PRESETS.lecture.post).toBeFalsy();
+  });
+
+  it('nomme une source de couleur connue', () => {
+    for (const name of PRESET_NAMES) {
+      expect(['classe', 'hauteur', 'audit', 'intensite', 'retours', 'bande'])
+        .toContain(PRESETS[name].colorMode ?? 'classe');
+    }
   });
 
   it('rend le preset de repli sur un nom inconnu', () => {

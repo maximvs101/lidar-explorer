@@ -49,8 +49,6 @@ export const NEUTRAL_PALETTE = {
 
 const FALLBACK = [90, 90, 95];
 
-const VARIANTS = 4;
-
 /**
  * Modes de coloration. Un seul uniforme les porte tous : trois interrupteurs
  * separes finissaient par s'empiler en cascade de `if`, avec des combinaisons
@@ -66,7 +64,6 @@ export const COLOR_MODES = {
 };
 
 const VERTEX = /* glsl */ `
-  #define VARIANTES 4.0
   attribute float classification;
   attribute float intensity;
   attribute float returns;
@@ -76,8 +73,6 @@ const VERTEX = /* glsl */ `
   uniform float uScale;
   uniform float uAttenuate;
   uniform float uBoost;
-  uniform vec2 uClipCenter;
-  uniform float uClipRadius;
   uniform sampler2D uTerrain;
   uniform vec2 uTerrainMin;
   uniform float uTerrainSize;
@@ -86,10 +81,6 @@ const VERTEX = /* glsl */ `
   uniform float uAuditMode;
   uniform float uColorMode;
   uniform vec2 uIntensityRange;
-  // 0 = disque, 1 = carre. Un booleen suffit : la distance de Tchebychev
-  // (max des ecarts) decoupe un carre la ou la norme euclidienne fait un cercle.
-  uniform float uClipSquare;
-  uniform float uTint;
   varying vec3 vColor;
 
   // Rampe de hauteur : du sol nu aux emergents. Le brun de depart evite de
@@ -117,23 +108,10 @@ const VERTEX = /* glsl */ `
     return mix(vec3(0.55), rgb, 0.72); // desature : on veut distinguer, pas eblouir
   }
 
-  // Bruit de valeur : deux batiments voisins prennent des teintes legerement
-  // differentes, ce qui rend la surface vivante sans qu'on ait eu besoin de
-  // segmenter quoi que ce soit. La variation est spatiale, donc stable quand la
-  // camera bouge — un aleatoire par point scintillerait.
-  float bruit(vec2 p) {
-    return fract(sin(dot(floor(p / 14.0), vec2(12.9898, 78.233))) * 43758.5453);
-  }
 
   void main() {
-    // La palette a VARIANTES lignes : le bruit spatial en choisit une, si bien
-    // que deux ilots voisins ne prennent pas la meme teinte. C'est le principe
-    // du cmap de prettymapp, ou chaque batiment tire sa couleur dans une
-    // liste — bien plus vivant qu'une seule teinte modulee en luminosite.
-    float variante = floor(bruit(position.xy) * VARIANTES);
-    vec4 entry = texture2D(uPalette, vec2((classification + 0.5) / 256.0,
-                                          (variante + 0.5) / VARIANTES));
-    vColor = entry.rgb * (1.0 + uTint * (bruit(position.xy + 137.0) - 0.5));
+    vec4 entry = texture2D(uPalette, vec2((classification + 0.5) / 256.0, 0.5));
+    vColor = entry.rgb;
 
     // --- Intensite : mesure physique, donc echelle neutre. Elle est bornee sur
     // des centiles et non sur le min/max, qu'un seul echo aberrant suffirait a
@@ -204,12 +182,6 @@ const VERTEX = /* glsl */ `
     // Une classe masquée est renvoyée hors du volume de vue : rien n'est
     // rasterisé, ce qui coûte moins qu'un discard au fragment.
     if (entry.a < 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-    // Meme sort pour ce qui deborde de la decoupe.
-    if (uClipRadius > 0.0) {
-      vec2 ecart = abs(position.xy - uClipCenter);
-      float portee = uClipSquare > 0.5 ? max(ecart.x, ecart.y) : length(ecart);
-      if (portee > uClipRadius) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-    }
   }
 `;
 
@@ -238,15 +210,14 @@ export class PointsMaterialPool {
     this.materials = new Map(); // taille de point -> ShaderMaterial
     this.shared = {
       uScale: 1, uAttenuate: attenuate ? 1 : 0, uRound: round ? 1 : 0, uBoost: 1,
-      uClipCenter: [0, 0], uClipRadius: 0, uClipSquare: 0, uTint: 0,
       uHeightMode: 0, uHeightMax: 30, uAuditMode: 0, uColorMode: 0,
       uIntensityRange: [200, 1450],
     };
   }
 
   _buildTexture() {
-    const data = new Uint8Array(256 * VARIANTS * 4);
-    const texture = new THREE.DataTexture(data, 256, VARIANTS, THREE.RGBAFormat);
+    const data = new Uint8Array(256 * 4);
+    const texture = new THREE.DataTexture(data, 256, 1, THREE.RGBAFormat);
     texture.magFilter = THREE.NearestFilter;
     texture.minFilter = THREE.NearestFilter;
     texture.generateMipmaps = false;
@@ -257,31 +228,13 @@ export class PointsMaterialPool {
 
   _fill(data = this.texture.image.data) {
     for (let code = 0; code < 256; code += 1) {
-      const entry = this.palette[code] ?? FALLBACK;
-      // Une entree est soit une couleur, soit une liste de couleurs entre
-      // lesquelles les points se repartissent.
-      const liste = Array.isArray(entry[0]) ? entry : [entry];
-      const alpha = this.hidden.has(code) ? 0 : 255;
-      for (let v = 0; v < VARIANTS; v += 1) {
-        // Les variantes sont echelonnees sur la liste : deux couleurs donnent
-        // deux tons purs et deux intermediaires, trois en donnent quatre.
-        const t = VARIANTS > 1 ? (v / (VARIANTS - 1)) * (liste.length - 1) : 0;
-        const i = Math.min(Math.floor(t), liste.length - 1);
-        const j = Math.min(i + 1, liste.length - 1);
-        const f = t - i;
-        const o = (v * 256 + code) * 4;
-        for (let c = 0; c < 3; c += 1) {
-          data[o + c] = Math.round(liste[i][c] * (1 - f) + liste[j][c] * f);
-        }
-        data[o + 3] = alpha;
-      }
+      const rgb = this.palette[code] ?? FALLBACK;
+      const o = code * 4;
+      data[o] = rgb[0];
+      data[o + 1] = rgb[1];
+      data[o + 2] = rgb[2];
+      data[o + 3] = this.hidden.has(code) ? 0 : 255;
     }
-  }
-
-  /** Première couleur d'une entrée, pour la légende. */
-  swatch(code) {
-    const entry = this.palette[code] ?? FALLBACK;
-    return Array.isArray(entry[0]) ? entry[0] : entry;
   }
 
   /** Applique un jeu de classes masquées. Effet immédiat, sans retoucher aux points. */
@@ -316,9 +269,6 @@ export class PointsMaterialPool {
         uAttenuate: { value: this.shared.uAttenuate },
         uRound: { value: this.shared.uRound },
         uBoost: { value: this.shared.uBoost },
-        uClipCenter: { value: new THREE.Vector2(...this.shared.uClipCenter) },
-        uClipRadius: { value: this.shared.uClipRadius },
-        uClipSquare: { value: this.shared.uClipSquare },
         uTerrain: { value: this.terrainTexture },
         uTerrainMin: { value: new THREE.Vector2(0, 0) },
         uTerrainSize: { value: 1 },
@@ -327,7 +277,6 @@ export class PointsMaterialPool {
         uAuditMode: { value: this.shared.uAuditMode },
         uColorMode: { value: this.shared.uColorMode },
         uIntensityRange: { value: new THREE.Vector2(...this.shared.uIntensityRange) },
-        uTint: { value: this.shared.uTint },
       },
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
@@ -369,13 +318,6 @@ export class PointsMaterialPool {
     this._pushShared();
   }
 
-  /** Decoupe. `shape` vaut 'circle' ou 'square' ; un rayon nul la desactive. */
-  setClip(center, radius, shape = 'circle') {
-    this.shared.uClipCenter = center ? [center[0], center[1]] : [0, 0];
-    this.shared.uClipRadius = radius ?? 0;
-    this.shared.uClipSquare = shape === 'square' ? 1 : 0;
-    this._pushShared();
-  }
 
   /**
    * Installe le modele de terrain servant au calcul des hauteurs.
@@ -451,11 +393,6 @@ export class PointsMaterialPool {
     this._pushShared();
   }
 
-  /** Amplitude de la variation de teinte, 0 pour une couleur uniforme. */
-  setTint(amount) {
-    this.shared.uTint = amount;
-    this._pushShared();
-  }
 
   _pushShared() {
     for (const material of this.materials.values()) {
@@ -463,10 +400,6 @@ export class PointsMaterialPool {
       material.uniforms.uAttenuate.value = this.shared.uAttenuate;
       material.uniforms.uRound.value = this.shared.uRound;
       material.uniforms.uBoost.value = this.shared.uBoost;
-      material.uniforms.uClipCenter.value.set(this.shared.uClipCenter[0], this.shared.uClipCenter[1]);
-      material.uniforms.uClipRadius.value = this.shared.uClipRadius;
-      material.uniforms.uClipSquare.value = this.shared.uClipSquare;
-      material.uniforms.uTint.value = this.shared.uTint;
       material.uniforms.uHeightMode.value = this.shared.uHeightMode;
       material.uniforms.uHeightMax.value = this.shared.uHeightMax;
       material.uniforms.uAuditMode.value = this.shared.uAuditMode;
