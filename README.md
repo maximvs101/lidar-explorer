@@ -30,6 +30,26 @@ npm run build
 3. **Naviguer**, puis choisir un preset ou une source de couleur selon ce que
    vous cherchez à voir.
 
+### Le panneau
+
+Il ne montre que ce qui a un sens à l'instant où vous le regardez. Avant
+chargement, il tient en trois blocs : l'aide, la dalle visée, le bouton. Les
+sections d'exploration n'apparaissent qu'une fois un nuage en scène — sans quoi
+la moitié du panneau n'afficherait que des tirets, et c'est ce vide qui donnait
+l'impression de désordre.
+
+| section | ce qu'on y règle |
+|---|---|
+| **Dalle** | ce qui a été trouvé sous le clic, et ce que le fichier contient |
+| **Vue** | preset, source de couleur, classes affichées, et les chiffres du mode courant |
+| **Chargement** | seuil de détail, dalles voisines — ce qui décide de ce qui arrive |
+| **Mesure** | poser deux points, lire la distance, effacer |
+| **Image** | export, et sa résolution |
+
+Ce qu'on ne règle qu'une fois est replié : réglages fins du rendu, contenu de la
+dalle, contrôles automatiques, sources et licences. Un tiers du panneau tient
+ainsi derrière un pli plutôt que dans le chemin.
+
 ### Se déplacer dans la scène
 
 | geste | effet |
@@ -54,6 +74,10 @@ rapportés aux points voulus. Elle disparaît une fois à jour : un indicateur q
 ne bouge plus n'informe plus.
 
 ### Deux réglages qui changent tout
+
+Le premier est sous **Chargement**, le second sous **Vue → Réglages fins** : ils
+ne se ressemblent que de loin, l'un décide de ce qui est chargé, l'autre de
+l'épaisseur du trait.
 
 - **Seuil de détail** — c'est le vrai levier de précision. L'abaisser fait
   descendre plus bas dans l'octree : de 3 px à 0,8 px, le nombre de points

@@ -67,7 +67,7 @@
       #roundrow input, #neighbourrow input { margin: 0; cursor: pointer;
                   accent-color: var(--accent); }
       #neighbourhint { margin: 0 0 8px; }
-      #exportrow { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px;
+      #exportrow { display: flex; align-items: center; gap: 8px; margin: 0;
                    font-size: 11px; color: var(--dim); }
       #exportrow select { background: var(--panel); color: var(--text);
                           border: 1px solid var(--line); border-radius: 4px;
@@ -121,6 +121,14 @@
       .src-u, .src-l { font-size: 10px; color: var(--dim); word-break: break-all; opacity: .8; }
       .src-l::before { content: "↳ "; }
       #sources a { color: var(--accent); }
+      /* Les blocs qui n'ont de sens qu'une fois un nuage chargé. Avant, ils
+         n'afficheraient que des tirets, et c'est cette moitié de panneau vide
+         qui donnait l'impression de désordre. */
+      body:not(.chargee) .phase { display: none; }
+      .sublabel { font-size: 10px; color: var(--dim); text-transform: uppercase;
+                  letter-spacing: .07em; margin: 11px 0 4px; }
+      .barre { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 2px 0 6px; }
+      .barre button { margin: 0; }
       .leaflet-container { font: inherit; background: #10141a; }
       .leaflet-control-attribution { font-size: 10px !important; }
     </style>
@@ -141,88 +149,111 @@
         </table>
         <p class="foot">Le détail se charge selon l'endroit où vous regardez : approchez-vous
           pour l'affiner, reculez pour couvrir plus large. Les dalles voisines viennent
-          d'elles-mêmes, sauf si vous décochez l'option sous « Affichage ».</p>
+          d'elles-mêmes, sauf si vous décochez l'option sous « Chargement ».</p>
       </details>
 
       <div id="notice"></div>
 
-      <div>
-        <button id="load" disabled>Charger le nuage</button>
-        <button id="export" disabled>Exporter l'image</button>
-        <button id="measure" disabled>Mesurer</button>
-      </div>
-      <label id="exportrow">
-        <span>résolution</span>
-        <select id="exportscale">
-          <option value="1">écran</option>
-          <option value="2" selected>×2</option>
-          <option value="3">×3</option>
-          <option value="4">×4</option>
-        </select>
-        <output id="exportsize"></output>
-      </label>
-      <div id="log"></div>
-
-      <h2>Mesure</h2>
-      <div id="measureout"><span class="dim">—</span></div>
-      <p class="foot" id="measureactions" hidden>
-        <button id="measureclear">Effacer la mesure</button>
-      </p>
-
       <h2>Dalle</h2>
       <div id="tile"><span class="dim">aucun lieu sélectionné</span></div>
+      <p class="barre" style="margin-top:8px">
+        <button id="load" disabled>Charger le nuage</button>
+      </p>
+      <div id="log"></div>
+      <details id="levelsbox" class="pliant phase">
+        <summary>Ce que contient la dalle</summary>
+        <div id="levels"></div>
+      </details>
 
-      <h2>Affichage</h2>
-      <div id="modes"></div>
-      <label id="sizerow">
-        <span>taille des points</span>
-        <input id="pointsize" type="range" min="0.4" max="2" step="0.05" value="1">
-        <output id="pointsizeval">1,00</output>
-      </label>
-      <label id="colorrow">
-        <span>couleur par</span>
-        <select id="colormode">
-          <option value="classe">classe</option>
-          <option value="intensite">intensité</option>
-          <option value="retours">nombre de retours</option>
-          <option value="bande">bande de vol</option>
-          <option value="hauteur">hauteur au sol</option>
-        </select>
-      </label>
-      <label id="roundrow">
-        <input id="round" type="checkbox">
-        <span>points ronds</span>
-      </label>
-      <label id="detailrow">
-        <span>seuil de détail</span>
-        <input id="detail" type="range" min="0.5" max="3" step="0.1" value="1.5">
-        <output id="detailval">1,5 px</output>
-      </label>
-      <p class="foot" id="detailhint">Plus le seuil est bas, plus l'application descend
-        dans l'octree : le nuage gagne en résolution et le nombre de points monte.</p>
-      <label id="neighbourrow">
-        <input id="neighbours" type="checkbox" checked>
-        <span>charger les dalles voisines</span>
-      </label>
-      <p class="foot" id="neighbourhint">Décocher s'en tient à la dalle choisie sur la carte :
-        moins de requêtes, une emprise qui ne bouge plus, et tout le budget de points
-        pour ce kilomètre carré.</p>
-      <div id="presets">
-        <button data-preset="tout">tout</button>
-        <button data-preset="sol">sol</button>
-        <button data-preset="bati">bâti</button>
-        <button data-preset="sansveg">sans végétation</button>
-      </div>
-      <div id="legend"><span class="dim">—</span></div>
-      <p id="biais" class="foot"></p>
+      <section class="phase">
+        <h2>Vue</h2>
+        <div id="modes"></div>
+        <label id="colorrow">
+          <span>couleur par</span>
+          <select id="colormode">
+            <option value="classe">classe</option>
+            <option value="intensite">intensité</option>
+            <option value="retours">nombre de retours</option>
+            <option value="bande">bande de vol</option>
+            <option value="hauteur">hauteur au sol</option>
+          </select>
+        </label>
+        <div id="stats"></div>
 
-      <h2>Contrôles</h2>
-      <div id="checks"><span class="dim">—</span></div>
+        <div class="sublabel">classes affichées</div>
+        <div id="presets">
+          <button data-preset="tout">tout</button>
+          <button data-preset="sol">sol</button>
+          <button data-preset="bati">bâti</button>
+          <button data-preset="sansveg">sans végétation</button>
+        </div>
+        <div id="legend"><span class="dim">—</span></div>
+        <p id="biais" class="foot"></p>
 
-      <h2>Compteurs</h2>
-      <div id="stats"><span class="dim">—</span></div>
+        <details id="finesse" class="pliant" style="margin-top:10px">
+          <summary>Réglages fins</summary>
+          <label id="sizerow">
+            <span>taille des points</span>
+            <input id="pointsize" type="range" min="0.4" max="2" step="0.05" value="1">
+            <output id="pointsizeval">1,00</output>
+          </label>
+          <label id="roundrow">
+            <input id="round" type="checkbox">
+            <span>points ronds</span>
+          </label>
+        </details>
+      </section>
 
-      <details id="sourcesbox" class="pliant" style="margin-top:16px">
+      <section class="phase">
+        <h2>Chargement</h2>
+        <label id="detailrow">
+          <span>seuil de détail</span>
+          <input id="detail" type="range" min="0.5" max="3" step="0.1" value="1.5">
+          <output id="detailval">1,5 px</output>
+        </label>
+        <p class="foot" id="detailhint">Plus le seuil est bas, plus l'application descend
+          dans l'octree : le nuage gagne en résolution et le nombre de points monte.</p>
+        <label id="neighbourrow">
+          <input id="neighbours" type="checkbox" checked>
+          <span>charger les dalles voisines</span>
+        </label>
+        <p class="foot" id="neighbourhint">Décocher s'en tient à la dalle choisie sur la carte :
+          moins de requêtes, une emprise qui ne bouge plus, et tout le budget de points
+          pour ce kilomètre carré.</p>
+      </section>
+
+      <section class="phase">
+        <h2>Mesure</h2>
+        <p class="barre">
+          <button id="measure" disabled>Mesurer</button>
+          <span id="measureactions" hidden><button id="measureclear">Effacer</button></span>
+        </p>
+        <div id="measureout"><span class="dim">—</span></div>
+      </section>
+
+      <section class="phase">
+        <h2>Image</h2>
+        <p class="barre">
+          <button id="export" disabled>Exporter l'image</button>
+          <label id="exportrow">
+            <span>résolution</span>
+            <select id="exportscale">
+              <option value="1">écran</option>
+              <option value="2" selected>×2</option>
+              <option value="3">×3</option>
+              <option value="4">×4</option>
+            </select>
+            <output id="exportsize"></output>
+          </label>
+        </p>
+      </section>
+
+      <details id="diagbox" class="pliant phase" style="margin-top:16px">
+        <summary>Contrôles automatiques</summary>
+        <div id="checks"><span class="dim">—</span></div>
+      </details>
+
+      <details id="sourcesbox" class="pliant">
         <summary>Sources et licences</summary>
         <div id="sources"></div>
       </details>

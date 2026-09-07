@@ -25,6 +25,7 @@ const el = {
   tile: document.getElementById('tile'),
   checks: document.getElementById('checks'),
   stats: document.getElementById('stats'),
+  levels: document.getElementById('levels'),
   sources: document.getElementById('sources'),
   hud: document.getElementById('hud'),
   legend: document.getElementById('legend'),
@@ -199,6 +200,21 @@ let loader = null;
 let selected = null;
 let session = null;
 
+/**
+ * Change de session, et avec elle la forme du panneau.
+ *
+ * Tant qu'aucun nuage n'est chargé, la moitié des sections n'afficherait que
+ * des tirets — mesure, image, classes, réglages de chargement. Les masquer est
+ * ce qui distingue un panneau lisible d'une liste de réglages inertes. Le
+ * basculement passe par ici et nulle part ailleurs : deux endroits qui
+ * affectent `session` finiraient par en oublier un.
+ */
+function setSession(next) {
+  session = next;
+  document.body.classList.toggle('chargee', Boolean(next));
+  window.__session = next;
+}
+
 async function makeLoader() {
   loader?.dispose();
   loader = await TileLoader.create({
@@ -338,11 +354,12 @@ async function pick(point) {
   el.measureBtn.disabled = true;
   setMeasuring(false);
   selected = null;
-  session = null;
+  setSession(null);
   viewer.clear();
   legendSignature = '';
   el.checks.innerHTML = '<span class="dim">—</span>';
-  el.stats.innerHTML = '<span class="dim">—</span>';
+  el.stats.innerHTML = '';
+  el.levels.innerHTML = '';
 
   if (!isWithinMetropole(point.x, point.y)) {
     picker.select(point, null);
@@ -403,16 +420,15 @@ async function loadSelected() {
     log(`${pagesRead} page(s) · ${fmt(nodes.length)} nœuds · ${fmt(nodes.reduce((a, n) => a + n.pointCount, 0))} pts disponibles`);
 
     voisines = 0;
-    session = { tile, started, firstPaintMs: null };
+    setSession({ tile, started, firstPaintMs: null });
     viewer.setTile(tile, nodes);
     extendToNeighbours();
 
-    table(el.stats, levels.map((l) => [`niveau ${l.level}`, `${fmt(l.points)} pts · ${mo(l.bytes)}`]));
+    table(el.levels, levels.map((l) => [`niveau ${l.level}`, `${fmt(l.points)} pts · ${mo(l.bytes)}`]));
     el.exportBtn.disabled = false;
     el.measureBtn.disabled = false;
     showExportSize();
     log('navigation libre — le détail se charge selon la caméra', 'ok');
-    window.__session = session;
   } catch (error) {
     log(`échec : ${error.message}`, 'err');
     notice(`<b>Le chargement a échoué.</b><br>${error.message}`, 'miss');
