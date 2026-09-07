@@ -1,20 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { diffSelection, selectNodes } from '../lod/selector.js';
-
-export const CLASS_COLORS = {
-  1: [0.43, 0.43, 0.45],
-  2: [0.59, 0.55, 0.47],
-  3: [0.47, 0.63, 0.35],
-  4: [0.37, 0.57, 0.27],
-  5: [0.24, 0.47, 0.22],
-  6: [0.8, 0.47, 0.37],
-  9: [0.27, 0.47, 0.71],
-  17: [0.67, 0.67, 0.71],
-  64: [0.78, 0.75, 0.43],
-  66: [0.27, 0.47, 0.71],
-};
-const DEFAULT_COLOR = [0.35, 0.35, 0.38];
+import { PointsMaterialPool } from './pointsMaterial.js';
+import { histogram } from '../analysis/classStats.js';
 
 /**
  * Rendu du nuage avec niveau de détail piloté par la caméra.
@@ -45,9 +33,11 @@ export class Viewer {
     this.group = new THREE.Group();
     this.scene.add(this.group);
 
+    this.materials = new PointsMaterialPool();
     this.tile = null;
     this.available = [];
     this.loaded = new Map(); // id -> THREE.Points
+    this.classCounts = new Map();
     this.pending = new Set();
     this.frustum = new THREE.Frustum();
     this.matrix = new THREE.Matrix4();
@@ -87,6 +77,10 @@ export class Viewer {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.materials.setProjection({
+      viewportHeight: this.renderer.domElement.height,
+      fovRadians: (this.camera.fov * Math.PI) / 180,
+    });
     this.sized = true;
   }
 
@@ -117,32 +111,40 @@ export class Viewer {
     this.pending.delete(node.id);
     if (this.loaded.has(node.id)) return;
 
-    const colors = new Float32Array(classification.length * 3);
-    for (let i = 0; i < classification.length; i += 1) {
-      const c = CLASS_COLORS[classification[i]] ?? DEFAULT_COLOR;
-      colors[i * 3] = c[0];
-      colors[i * 3 + 1] = c[1];
-      colors[i * 3 + 2] = c[2];
-    }
-
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    // La classification reste sur 1 octet : le GPU la convertit en float à la
+    // lecture, et c'est elle qui indexe la palette. Pas de tampon de couleur.
+    geometry.setAttribute('classification', new THREE.BufferAttribute(classification, 1));
 
-    const material = new THREE.PointsMaterial({
-      size: Math.max(0.35, node.spacingAtLevel ?? 0.6),
-      sizeAttenuation: true,
-      vertexColors: true,
-    });
-
-    const points = new THREE.Points(geometry, material);
+    const spacing = this.tile ? this.tile.header.spacing / 2 ** node.key.level : 0.6;
+    const points = new THREE.Points(geometry, this.materials.forSize(Math.max(0.25, spacing * 0.9)));
     points.frustumCulled = false; // le tri est fait par le sélecteur, pas par Three
     points.userData.pointCount = classification.length;
+    points.userData.hist = histogram(classification);
     this.group.add(points);
     this.loaded.set(node.id, points);
 
+    for (const [code, n] of points.userData.hist) {
+      this.classCounts.set(code, (this.classCounts.get(code) ?? 0) + n);
+    }
     this.stats.nodesInScene = this.loaded.size;
     this.stats.pointsInScene += classification.length;
+  }
+
+  /** Masque ou révèle des classes. Instantané : seule la palette change. */
+  setHiddenClasses(codes) {
+    this.materials.setHidden(codes);
+  }
+
+  /**
+   * Points affichés par classe. À ne jamais présenter comme la composition de
+   * la zone : la mesure du 07/09/2026 sur emprise identique montre que la part
+   * d'une classe dépend fortement du niveau de détail chargé — la végétation
+   * haute pèse 24,3 % au niveau 2 pour 16,6 % en réalité, un facteur 1,46.
+   */
+  visibleClassCounts() {
+    return new Map(this.classCounts);
   }
 
   /**
@@ -155,7 +157,13 @@ export class Viewer {
     if (!points) return;
     this.group.remove(points);
     points.geometry.dispose();
-    points.material.dispose();
+    // Surtout PAS de dispose sur le matériau : il est partagé entre tous les
+    // nœuds de même taille de point. Le libérer ici les casserait tous d'un coup.
+    for (const [code, n] of points.userData.hist) {
+      const left = (this.classCounts.get(code) ?? 0) - n;
+      if (left > 0) this.classCounts.set(code, left);
+      else this.classCounts.delete(code);
+    }
     this.loaded.delete(id);
     this.stats.pointsInScene -= points.userData.pointCount;
     this.stats.nodesInScene = this.loaded.size;
@@ -165,6 +173,7 @@ export class Viewer {
   clear() {
     for (const id of [...this.loaded.keys()]) this.removeNode(id);
     this.pending.clear();
+    this.classCounts.clear();
     this.stats.pointsInScene = 0;
     this.stats.nodesInScene = 0;
     this.available = [];
@@ -257,6 +266,19 @@ export class Viewer {
     if (gl.drawingBufferWidth < 100 || gl.drawingBufferHeight < 100) {
       return { error: `drawing buffer ${gl.drawingBufferWidth}x${gl.drawingBufferHeight} — mesure sans objet` };
     }
+    // Une page qui n'est pas composée n'exécute pas vraiment ses commandes GL :
+    // elles ne partent au GPU que lorsqu'on lit le tampon. Mesuré le 07/09/2026
+    // sur un onglet masqué — de 0,03 à 21 ms par image selon la méthode de
+    // synchronisation, et des points quatre fois plus gros rendus « plus vite »
+    // que des petits. Aucune de ces valeurs ne décrit le rendu ; mieux vaut ne
+    // rien annoncer qu'annoncer un chiffre flatteur et faux.
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+      return {
+        unreliable: true,
+        reason: "page non composée (onglet masqué) : le rendu n'est pas exécuté, toute durée mesurée ici est fictive",
+        points: this.stats.pointsInScene,
+      };
+    }
     const pixel = new Uint8Array(4);
     const axis = new THREE.Vector3(0, 0, 1);
     for (let i = 0; i < 5; i += 1) this.renderer.render(this.scene, this.camera);
@@ -304,6 +326,7 @@ export class Viewer {
     this._observer.disconnect();
     this.clear();
     this.controls.dispose();
+    this.materials.dispose();
     this.renderer.dispose();
   }
 }

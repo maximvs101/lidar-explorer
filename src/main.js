@@ -5,6 +5,9 @@ import { TileIndex, acquisitionSeason } from './geo/wfs.js';
 import { isWithinMetropole, tileNameAt } from './geo/projection.js';
 import { LocationPicker } from './ui/map.js';
 import { Viewer } from './render/viewer.js';
+import { DEFAULT_PALETTE } from './render/pointsMaterial.js';
+import { className, shares } from './analysis/classStats.js';
+import { cardinal, chooseScale, formatLength, pixelsPerMetre, viewAzimuth } from './ui/scale.js';
 
 const CONCURRENCY = 4;
 const POINT_BUDGET = 4_000_000;
@@ -18,7 +21,65 @@ const el = {
   checks: document.getElementById('checks'),
   stats: document.getElementById('stats'),
   hud: document.getElementById('hud'),
+  legend: document.getElementById('legend'),
+  presets: document.getElementById('presets'),
+  biais: document.getElementById('biais'),
+  scale: document.getElementById('scale'),
+  scalebar: document.getElementById('scalebar'),
+  scaletext: document.getElementById('scaletext'),
 };
+
+/** Classes masquées, partagées entre la légende et les boutons de préréglage. */
+const hidden = new Set();
+
+const PRESETS = {
+  tout: [],
+  sol: [1, 3, 4, 5, 6, 9, 17, 64, 65, 66, 67],
+  bati: [1, 2, 3, 4, 5, 9, 17, 64, 65, 66, 67],
+  sansveg: [3, 4, 5],
+};
+
+/**
+ * Légende des classes présentes dans ce qui est affiché.
+ *
+ * Les compteurs portent sur les **points affichés**, jamais sur la composition
+ * de la zone. Mesuré le 07/09/2026 sur une emprise identique : la part d'une
+ * classe dépend fortement du niveau de détail chargé — végétation haute à
+ * 24,3 % au niveau 2 contre 16,6 % une fois tous les niveaux réunis, et
+ * bâtiment à 47,4 % contre 56,1 %. Présenter ces parts comme la composition du
+ * terrain serait faux d'un facteur pouvant atteindre 1,5.
+ */
+function renderLegend() {
+  const counts = viewer.visibleClassCounts();
+  if (counts.size === 0) {
+    el.legend.innerHTML = '<span class="dim">—</span>';
+    el.biais.textContent = '';
+    return;
+  }
+  const rows = shares(counts);
+  el.legend.innerHTML = rows
+    .map((r) => {
+      const rgb = DEFAULT_PALETTE[r.code] ?? [90, 90, 95];
+      const off = hidden.has(r.code) ? ' off' : '';
+      return (
+        `<label class="cls${off}"><input type="checkbox" data-code="${r.code}"` +
+        `${hidden.has(r.code) ? '' : ' checked'}>` +
+        `<span class="sw" style="background:rgb(${rgb.join(',')})"></span>` +
+        `<span class="nm">${r.code} ${className(r.code)}</span>` +
+        `<span class="ct">${fmt(r.count)} · ${r.share.toFixed(1)} %</span></label>`
+      );
+    })
+    .join('');
+  el.biais.textContent =
+    'Parts calculées sur les points actuellement affichés, pas sur la composition ' +
+    'du terrain : elles dépendent du niveau de détail chargé (la végétation haute ' +
+    'pèse jusqu’à 1,5 fois trop dans une vue d’ensemble).';
+}
+
+function applyHidden() {
+  viewer.setHiddenClasses(hidden);
+  renderLegend();
+}
 
 const fmt = (n) => Math.round(n).toLocaleString('fr-FR');
 const mo = (n) => `${(n / 1e6).toFixed(2)} Mo`;
@@ -203,10 +264,50 @@ el.clear.addEventListener('click', async () => {
 });
 el.load.addEventListener('click', () => loadSelected());
 
+el.legend.addEventListener('change', (event) => {
+  const code = Number(event.target.dataset.code);
+  if (Number.isNaN(code)) return;
+  if (event.target.checked) hidden.delete(code);
+  else hidden.add(code);
+  applyHidden();
+});
+
+el.presets.addEventListener('click', (event) => {
+  const preset = event.target.dataset.preset;
+  if (!preset) return;
+  hidden.clear();
+  for (const code of PRESETS[preset]) hidden.add(code);
+  applyHidden();
+});
+
 // Le bandeau se rafraîchit sur horloge, pas dans la boucle de rendu : mêler
 // l'affichage des mesures à ce qu'on mesure fausserait les deux.
+/** Barre d'échelle : valable à la profondeur visée, ce que le libellé rappelle. */
+function renderScale() {
+  if (!session) { el.scale.className = ''; return; }
+  const cam = viewer.camera;
+  const target = viewer.controls.target;
+  const distance = cam.position.distanceTo(target);
+  const ppm = pixelsPerMetre({
+    viewportHeight: el.scale.parentElement.clientHeight,
+    fovRadians: (cam.fov * Math.PI) / 180,
+    distance,
+  });
+  const chosen = chooseScale({ pixelsPerMetre: ppm });
+  if (!chosen) { el.scale.className = ''; return; }
+  const azimuth = viewAzimuth(
+    [cam.position.x, cam.position.y],
+    [target.x, target.y],
+  );
+  el.scale.className = 'show';
+  el.scalebar.style.width = `${Math.round(chosen.px)}px`;
+  el.scaletext.textContent =
+    `${formatLength(chosen.metres)} au centre · vue vers le ${cardinal(azimuth)} (${Math.round(azimuth)}°)`;
+}
+
 setInterval(() => {
   const s = viewer.stats;
+  renderScale();
   const sel = s.lastSelection;
   el.hud.innerHTML = session
     ? `<b>${fmt(s.pointsInScene)}</b> pts · <b>${s.nodesInScene}</b> nœuds en scène` +
@@ -215,6 +316,7 @@ setInterval(() => {
     : 'cliquez sur la carte pour choisir un lieu';
 
   if (session) {
+    renderLegend();
     const report = loader.report();
     renderChecks([
       {
@@ -249,6 +351,10 @@ setInterval(() => {
 }, 500);
 
 window.__viewer = viewer;
+window.__hidden = hidden;
+window.__applyHidden = applyHidden;
+window.__renderLegend = renderLegend;
+window.__renderScale = renderScale;
 window.__picker = picker;
 window.__index = index;
 window.__pick = pick;
