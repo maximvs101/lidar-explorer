@@ -4,6 +4,7 @@ import { diffSelection, selectAcross } from '../lod/selector.js';
 import { PointsMaterialPool } from './pointsMaterial.js';
 import { PRESETS, getPreset } from './presets.js';
 import { ReliefRenderer } from './relief.js';
+import { ScenePicker } from './picker.js';
 import { histogram } from '../analysis/classStats.js';
 import { TerrainGrid, heightStats } from '../analysis/terrain.js';
 import { WaterPlanarity, classContradictions, summarise } from '../analysis/audit.js';
@@ -40,6 +41,11 @@ export class Viewer {
     this.materials = new PointsMaterialPool();
     this.relief = new ReliefRenderer(this.renderer);
     this.reliefOn = false;
+    this.picker = new ScenePicker(this.renderer);
+    this.measureGroup = new THREE.Group();
+    this.measureGroup.renderOrder = 10;
+    this.scene.add(this.measureGroup);
+    this._measureGeometries = 0;
     this.pointScale = 1;
     // Grille de terrain : 3 km de cote en 512 cellules, soit ~5,9 m. Le sol
     // varie peu a cette echelle, et une grille plus fine ferait exploser le
@@ -362,13 +368,76 @@ export class Viewer {
 
 
   /**
-   * Geometries que le rendu ajoute en plus des noeuds de points : le quad plein
-   * ecran de la passe de relief, qui reste alloue une fois qu'il a servi.
-   * `renderer.info` compte ce qui est sur le GPU, pas ce qui vient d'etre
-   * dessine — sans ce decompte, le controle anti-fuite crierait a tort.
+   * Geometries que le rendu ajoute en plus des noeuds de points.
+   *
+   * `renderer.info` compte ce qui est alloue sur le GPU, pas ce qui vient
+   * d'etre dessine : le quad plein ecran y reste une fois qu'il a servi, et les
+   * marqueurs de mesure tant qu'ils sont poses. Sans ce decompte, le controle
+   * anti-fuite crierait a tort.
+   *
+   * Three partage une meme geometrie entre tous ses quads plein ecran, d'ou le
+   * `||` : relief et selection n'en comptent qu'une a eux deux.
    */
   get extraGeometries() {
-    return this.relief.uploaded ? 1 : 0;
+    return (this.relief.uploaded || this.picker.uploaded ? 1 : 0) + this._measureGeometries;
+  }
+
+  /**
+   * Position 3D sous un point de l'ecran, en coordonnees de scene.
+   *
+   * Les coordonnees arrivent en pixels CSS ; le tampon de rendu peut avoir une
+   * densite differente, d'ou la remise a l'echelle. Sans elle, la mesure serait
+   * juste sur un ecran classique et decalee d'un facteur deux sur un ecran
+   * dense — le genre d'erreur qui ne se voit que sur une autre machine.
+   */
+  pickAt(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return null;
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    const x = ((clientX - rect.left) / rect.width) * size.x;
+    const y = ((clientY - rect.top) / rect.height) * size.y;
+    if (x < 0 || y < 0 || x >= size.x || y >= size.y) return null;
+    return this.picker.pick(this.scene, this.camera, x, y);
+  }
+
+  /** Pose les marqueurs de mesure : un point, ou un segment entre deux points. */
+  showMeasure(points) {
+    this.clearMeasure();
+    if (!points || points.length === 0) return;
+
+    const sphere = new THREE.SphereGeometry(1, 16, 12);
+    this._measureGeometries += 1;
+    // Le rayon suit la distance a la camera : un marqueur de taille fixe dans
+    // le monde disparait de loin et devient enorme de pres.
+    const echelle = Math.max(this.camera.position.distanceTo(this.controls.target) * 0.006, 0.4);
+    const matiere = new THREE.MeshBasicMaterial({ color: 0xff5b4a, depthTest: false });
+    for (const p of points) {
+      const m = new THREE.Mesh(sphere, matiere);
+      m.position.copy(p);
+      m.scale.setScalar(echelle);
+      m.renderOrder = 11;
+      this.measureGroup.add(m);
+    }
+
+    if (points.length >= 2) {
+      const ligne = new THREE.BufferGeometry().setFromPoints([points[0], points[1]]);
+      this._measureGeometries += 1;
+      const trait = new THREE.Line(
+        ligne,
+        new THREE.LineBasicMaterial({ color: 0xff5b4a, depthTest: false }),
+      );
+      trait.renderOrder = 11;
+      this.measureGroup.add(trait);
+    }
+  }
+
+  clearMeasure() {
+    for (const enfant of [...this.measureGroup.children]) {
+      this.measureGroup.remove(enfant);
+      enfant.geometry?.dispose();
+      enfant.material?.dispose();
+    }
+    this._measureGeometries = 0;
   }
 
 
@@ -443,6 +512,7 @@ export class Viewer {
   }
 
   clear() {
+    this.clearMeasure();
         this.terrain = null;
     this.terrainStats = null;
     this.auditStats = null;
@@ -678,7 +748,9 @@ export class Viewer {
     this._observer.disconnect();
     this.clear();
     this.controls.dispose();
-        this.relief.dispose();
+    this.clearMeasure();
+    this.picker.dispose();
+    this.relief.dispose();
     this.materials.dispose();
     this.renderer.dispose();
   }

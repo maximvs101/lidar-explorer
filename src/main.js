@@ -7,6 +7,7 @@ import { LocationPicker } from './ui/map.js';
 import { Viewer } from './render/viewer.js';
 import { PRESETS, PRESET_NAMES } from './render/presets.js';
 import { COLOR_MODES } from './render/pointsMaterial.js';
+import { formatDistance, formatSlope, measureBetween, toAbsolute } from './analysis/measure.js';
 import { className, shares } from './analysis/classStats.js';
 import { cardinal, chooseScale, formatLength, pixelsPerMetre, viewAzimuth } from './ui/scale.js';
 
@@ -37,6 +38,8 @@ const el = {
   round: document.getElementById('round'),
   detail: document.getElementById('detail'),
   detailVal: document.getElementById('detailval'),
+  measureBtn: document.getElementById('measure'),
+  measureOut: document.getElementById('measureout'),
   exportBtn: document.getElementById('export'),
   exportScale: document.getElementById('exportscale'),
   exportSize: document.getElementById('exportsize'),
@@ -278,6 +281,8 @@ async function pick(point) {
   clearLog();
   el.load.disabled = true;
   el.exportBtn.disabled = true;
+  el.measureBtn.disabled = true;
+  setMeasuring(false);
   selected = null;
   session = null;
   viewer.clear();
@@ -347,6 +352,7 @@ async function loadSelected() {
 
     table(el.stats, levels.map((l) => [`niveau ${l.level}`, `${fmt(l.points)} pts · ${mo(l.bytes)}`]));
     el.exportBtn.disabled = false;
+    el.measureBtn.disabled = false;
     showExportSize();
     log('navigation libre — le détail se charge selon la caméra', 'ok');
     window.__session = session;
@@ -364,6 +370,68 @@ const picker = new LocationPicker(document.getElementById('map'), {
   onCoverage: (info) => {
     if (info.error) log(`couverture indisponible : ${info.error}`, 'warn');
   },
+});
+
+/**
+ * Mesure entre deux points cliqués.
+ *
+ * Le premier clic pose l'origine, le second referme la mesure, un troisième
+ * repart de zéro. Les coordonnées sont rendues en Lambert-93 et NGF-IGN69 :
+ * une mesure qui ne peut pas se reporter sur une carte ne sert à rien.
+ */
+let measuring = false;
+let picks = [];
+
+function setMeasuring(on) {
+  measuring = on;
+  el.measureBtn.classList.toggle('on', on);
+  document.getElementById('stage').classList.toggle('measuring', on);
+  if (!on) {
+    picks = [];
+    viewer.clearMeasure();
+    el.measureOut.innerHTML = '<span class="dim">—</span>';
+  } else {
+    el.measureOut.innerHTML = '<span class="dim">cliquez un premier point</span>';
+  }
+}
+
+function renderMeasure() {
+  const origine = viewer.sceneOrigin ?? [0, 0, 0];
+  const a = toAbsolute(picks[0], origine);
+  if (picks.length === 1) {
+    table(el.measureOut, [
+      ['point A', `${a.x.toFixed(1)} ; ${a.y.toFixed(1)}`],
+      ['altitude A', `${a.z.toFixed(2)} m NGF`],
+      ['', '<span class="dim">cliquez un second point</span>'],
+    ]);
+    return;
+  }
+  const b = toAbsolute(picks[1], origine);
+  const m = measureBetween(a, b);
+  table(el.measureOut, [
+    ['distance', `<b>${formatDistance(m.distance)}</b>`],
+    ['horizontale', formatDistance(m.horizontal)],
+    ['dénivelé', formatDistance(m.dz)],
+    ['pente', formatSlope(m.slopePercent, m.slopeDegrees)],
+    ['azimut', Number.isFinite(m.azimuth) ? `${m.azimuth.toFixed(1)}°` : '—'],
+    ['altitude A', `${a.z.toFixed(2)} m NGF`],
+    ['altitude B', `${b.z.toFixed(2)} m NGF`],
+  ]);
+}
+
+el.measureBtn.addEventListener('click', () => setMeasuring(!measuring));
+
+document.getElementById('view').addEventListener('click', (event) => {
+  if (!measuring || !session) return;
+  const point = viewer.pickAt(event.clientX, event.clientY);
+  if (!point) {
+    el.measureOut.innerHTML = '<span class="dim">aucun point à cet endroit</span>';
+    return;
+  }
+  if (picks.length >= 2) picks = [];
+  picks.push(point);
+  viewer.showMeasure(picks);
+  renderMeasure();
 });
 
 el.clear.addEventListener('click', async () => {
@@ -632,6 +700,8 @@ window.__renderScale = renderScale;
 window.__extend = extendToNeighbours;
 window.__maybeExtend = maybeExtend;
 window.__setPreset = setPreset;
+window.__setMeasuring = setMeasuring;
+window.__picks = () => picks;
 window.__setPointScale = (f) => { el.pointSize.value = String(f); el.pointSize.dispatchEvent(new Event('input')); };
 window.__picker = picker;
 window.__index = index;

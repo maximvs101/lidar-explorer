@@ -30,6 +30,11 @@ se raffine selon la caméra, et les dalles voisines se chargent au déplacement.
   éviction des nœuds hors champ.
 - **Filtres de classe** instantanés : la classification vit sur le GPU, un octet
   par point indexant une palette.
+- **Mesure dans la scène** — deux clics donnent distance 3D, distance
+  horizontale, dénivelé, pente en pourcentage *et* en degrés, azimut, et les
+  altitudes en NGF-IGN69. Le point sous le curseur est retrouvé en lisant le
+  tampon de profondeur, ce qui coûte le même prix quel que soit le nombre de
+  points et rend exactement ce que l'œil voit.
 - **Canopée et audit** — un modèle de terrain se construit à partir des seuls
   points de sol, d'où les hauteurs au-dessus du sol. L'audit y compare la
   classification à trois contrôles objectifs : végétation haute posée au sol,
@@ -63,6 +68,9 @@ se raffine selon la caméra, et les dalles voisines se chargent au déplacement.
 - La **saison d'acquisition** change tout à la végétation : un relevé feuilles
   tombées ne montre pas la même canopée qu'un relevé de juin. La date figure
   dans le panneau.
+- Les altitudes sont **orthométriques** (NGF-IGN69), pas ellipsoïdales : les
+  comparer à un relevé GNSS brut demande une conversion de géoïde, de l'ordre de
+  45 à 50 m en France.
 - Les **parts de classes affichées** portent sur les points chargés, pas sur la
   composition du terrain. Mesuré sur emprise identique, la végétation haute pèse
   24,3 % au niveau 2 de l'octree contre 16,6 % tous niveaux réunis.

@@ -62,7 +62,8 @@
                           border: 1px solid var(--line); border-radius: 4px;
                           padding: 2px 5px; font: inherit; }
       #exportrow output { font-variant-numeric: tabular-nums; }
-      #modes button.on { border-color: var(--accent); color: var(--accent); }
+      #modes button.on, button.on { border-color: var(--accent); color: var(--accent); }
+      #stage.measuring { cursor: crosshair; }
       .cls { display: flex; align-items: center; gap: 7px; margin: 2px 0; font-size: 12px;
              cursor: pointer; user-select: none; }
       .cls input { margin: 0; cursor: pointer; }
@@ -111,6 +112,7 @@
       <div>
         <button id="load" disabled>Charger le nuage</button>
         <button id="export" disabled>Exporter l'image</button>
+        <button id="measure" disabled>Mesurer</button>
         <button id="clear">Vider le cache</button>
       </div>
       <label id="exportrow">
@@ -124,6 +126,9 @@
         <output id="exportsize"></output>
       </label>
       <div id="log"></div>
+
+      <h2>Mesure</h2>
+      <div id="measureout"><span class="dim">—</span></div>
 
       <h2>Dalle</h2>
       <div id="tile"><span class="dim">aucun lieu sélectionné</span></div>
