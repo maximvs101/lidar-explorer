@@ -150,6 +150,21 @@ export const PRESETS = {
     // varie davantage pour que les îlots voisins se distinguent.
     diorama: { ...BASE, strength: 22, vignette: 0.16, saturation: 1.24, tint: 0.24, lightAmount: 0.62 },
   },
+  canopee: {
+    label: 'canopée',
+    palette: MODEL_PALETTE,
+    background: 0xf4f1e8,
+    post: true,
+    shape: null,
+    round: false,
+    boost: 1,
+    // La couleur vient de la hauteur au-dessus du sol, pas de la classe.
+    heightMode: true,
+    heightMax: 30,
+    // Ombrage discret et aucune saturation ajoutée : la rampe de hauteur porte
+    // déjà l'information, la renforcer fausserait la lecture des couleurs.
+    diorama: { ...BASE, strength: 12, saturation: 1, tint: 0, vignette: 0.14, lightAmount: 0.35 },
+  },
   peach: {
     label: 'peach',
     palette: PEACH_PALETTE,

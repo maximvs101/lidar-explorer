@@ -89,10 +89,18 @@ function renderLegend() {
       );
     })
     .join('');
-  el.biais.textContent =
-    'Parts calculées sur les points actuellement affichés, pas sur la composition ' +
-    'du terrain : elles dépendent du niveau de détail chargé (la végétation haute ' +
-    'pèse jusqu’à 1,5 fois trop dans une vue d’ensemble).';
+  // En mode hauteur, les pastilles ne décrivent plus ce qui est à l'écran : la
+  // couleur vient de la hauteur au-dessus du sol. Le dire, sinon la légende
+  // affirme quelque chose de faux.
+  const parClasse = !viewer.preset.heightMode;
+  el.legend.classList.toggle('muted', !parClasse);
+  el.biais.textContent = parClasse
+    ? 'Parts calculées sur les points actuellement affichés, pas sur la composition ' +
+      'du terrain : elles dépendent du niveau de détail chargé (la végétation haute ' +
+      'pèse jusqu’à 1,5 fois trop dans une vue d’ensemble).'
+    : `Les couleurs affichées viennent de la hauteur au-dessus du sol (0 à ` +
+      `${viewer.preset.heightMax ?? 30} m), pas des classes ci-dessus — les pastilles ` +
+      'ne servent ici qu’à filtrer. Les comptes, eux, restent justes.';
 }
 
 function applyHidden() {
@@ -490,6 +498,33 @@ setInterval(() => {
   renderScale();
   maybeExtend();
   const sel = s.lastSelection;
+  // En mode canopée, on affiche ce que la mesure vaut : la part de terrain
+  // réellement observée. Sous couvert dense elle chute, et les hauteurs
+  // deviennent des estimations — le taire serait donner du chiffre pour du fait.
+  if (session && viewer.preset.heightMode) {
+    const t = viewer.terrainStats;
+    const c = viewer.canopyStats();
+    // Mesurée autour du point visé, sur 400 m : c'est cette part-là qui dit si
+    // les hauteurs affichées reposent sur du sol vu ou sur une interpolation.
+    const cible = viewer.controls.target;
+    const local = viewer.terrain?.filled
+      ? viewer.terrain.coverageWithin([cible.x, cible.y], 400)
+      : null;
+    table(el.stats, [
+      ['terrain observé ici', local ? `${(100 * local.ratio).toFixed(1)} %` : '—',
+        local && local.ratio < 0.35 ? 'warn' : ''],
+      ['— sur toute la grille', t ? `${(100 * t.coverage).toFixed(1)} %` : '—'],
+      ['maille', t ? `${t.step.toFixed(1)} m` : '—'],
+      ['cellules comblées', t ? fmt(t.filled - t.observed) : '—'],
+      ['cellules sans terrain', t ? fmt(t.restants) : '—', t && t.restants > 0 ? 'warn' : ''],
+      ['végétation mesurée', c ? fmt(c.count) : '—'],
+      ['sans sol connu', c ? fmt(c.unknown) : '—', c && c.unknown > 0 ? 'warn' : ''],
+      ['hauteur médiane des cimes', c && Number.isFinite(c.p99) ? `${c.p99.toFixed(1)} m` : '—'],
+      ['hauteur maximale', c && Number.isFinite(c.max) ? `${c.max.toFixed(1)} m` : '—'],
+      ['échelle de couleur', `0 → ${viewer.preset.heightMax ?? 30} m`],
+    ]);
+  }
+
   el.hud.innerHTML = session
     ? `<b>${fmt(s.pointsInScene)}</b> pts · <b>${s.nodesInScene}</b> nœuds · ` +
       `<b>${viewer.tiles.size}</b> dalle${viewer.tiles.size > 1 ? 's' : ''}` +

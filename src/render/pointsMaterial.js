@@ -62,11 +62,27 @@ const VERTEX = /* glsl */ `
   uniform float uBoost;
   uniform vec2 uClipCenter;
   uniform float uClipRadius;
+  uniform sampler2D uTerrain;
+  uniform vec2 uTerrainMin;
+  uniform float uTerrainSize;
+  uniform float uHeightMode;
+  uniform float uHeightMax;
   // 0 = disque, 1 = carre. Un booleen suffit : la distance de Tchebychev
   // (max des ecarts) decoupe un carre la ou la norme euclidienne fait un cercle.
   uniform float uClipSquare;
   uniform float uTint;
   varying vec3 vColor;
+
+  // Rampe de hauteur : du sol nu aux emergents. Le brun de depart evite de
+  // confondre un point au ras du sol avec un buisson.
+  vec3 rampeHauteur(float t) {
+    vec3 c;
+    if (t < 0.10)      c = mix(vec3(0.58, 0.53, 0.45), vec3(0.76, 0.78, 0.42), t / 0.10);
+    else if (t < 0.30) c = mix(vec3(0.76, 0.78, 0.42), vec3(0.44, 0.68, 0.35), (t - 0.10) / 0.20);
+    else if (t < 0.60) c = mix(vec3(0.44, 0.68, 0.35), vec3(0.18, 0.47, 0.28), (t - 0.30) / 0.30);
+    else               c = mix(vec3(0.18, 0.47, 0.28), vec3(0.95, 0.88, 0.55), (t - 0.60) / 0.40);
+    return c;
+  }
 
   // Bruit de valeur : deux batiments voisins prennent des teintes legerement
   // differentes, ce qui rend la surface vivante sans qu'on ait eu besoin de
@@ -85,6 +101,22 @@ const VERTEX = /* glsl */ `
     vec4 entry = texture2D(uPalette, vec2((classification + 0.5) / 256.0,
                                           (variante + 0.5) / VARIANTES));
     vColor = entry.rgb * (1.0 + uTint * (bruit(position.xy + 137.0) - 0.5));
+
+    if (uHeightMode > 0.5) {
+      vec2 uv = (position.xy - uTerrainMin) / uTerrainSize;
+      // Hors de la grille, l'echantillonnage rendrait le bord sans rien dire :
+      // on le detecte explicitement plutot que de peindre une hauteur inventee.
+      if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+        vColor = vec3(0.42, 0.42, 0.45);
+      } else {
+        float sol = texture2D(uTerrain, uv).r;
+        if (sol < -9000.0) {
+          vColor = vec3(0.42, 0.42, 0.45); // terrain non observe et non comble
+        } else {
+          vColor = rampeHauteur(clamp((position.z - sol) / uHeightMax, 0.0, 1.0));
+        }
+      }
+    }
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mv;
     gl_PointSize = uAttenuate > 0.5 ? max(1.0, uBoost * uSize * uScale / max(-mv.z, 0.001)) : uSize * uBoost;
@@ -119,10 +151,14 @@ export class PointsMaterialPool {
     this.palette = { ...palette };
     this.hidden = new Set();
     this.texture = this._buildTexture();
+    this.terrainTexture = null;
+    this.terrainMin = [0, 0];
+    this.terrainSize = 1;
     this.materials = new Map(); // taille de point -> ShaderMaterial
     this.shared = {
       uScale: 1, uAttenuate: attenuate ? 1 : 0, uRound: round ? 1 : 0, uBoost: 1,
       uClipCenter: [0, 0], uClipRadius: 0, uClipSquare: 0, uTint: 0,
+      uHeightMode: 0, uHeightMax: 30,
     };
   }
 
@@ -201,6 +237,11 @@ export class PointsMaterialPool {
         uClipCenter: { value: new THREE.Vector2(...this.shared.uClipCenter) },
         uClipRadius: { value: this.shared.uClipRadius },
         uClipSquare: { value: this.shared.uClipSquare },
+        uTerrain: { value: this.terrainTexture },
+        uTerrainMin: { value: new THREE.Vector2(0, 0) },
+        uTerrainSize: { value: 1 },
+        uHeightMode: { value: this.shared.uHeightMode },
+        uHeightMax: { value: this.shared.uHeightMax },
         uTint: { value: this.shared.uTint },
       },
       vertexShader: VERTEX,
@@ -251,6 +292,50 @@ export class PointsMaterialPool {
     this._pushShared();
   }
 
+  /**
+   * Installe le modele de terrain servant au calcul des hauteurs.
+   *
+   * L'altitude du sol vit dans une texture a un canal, echantillonnee au plus
+   * proche : a trois metres par texel, le sol varie de quelques centimetres
+   * d'une cellule a l'autre, et un filtrage lineaire n'apporterait rien qu'une
+   * dependance a une extension WebGL qui n'est pas garantie.
+   */
+  setTerrain(grid) {
+    if (this.terrainTexture) this.terrainTexture.dispose();
+    if (!grid) {
+      this.terrainTexture = null;
+      this.shared.uHeightMode = 0;
+      this._pushShared();
+      return;
+    }
+    const data = new Float32Array(grid.height.length);
+    for (let k = 0; k < data.length; k += 1) {
+      data[k] = grid.known[k] ? grid.height[k] : -9999;
+    }
+    const texture = new THREE.DataTexture(data, grid.cells, grid.cells, THREE.RedFormat, THREE.FloatType);
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestFilter;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.generateMipmaps = false;
+    texture.needsUpdate = true;
+    this.terrainTexture = texture;
+    this.terrainMin = [grid.minX, grid.minY];
+    this.terrainSize = grid.size;
+    for (const material of this.materials.values()) {
+      material.uniforms.uTerrain.value = texture;
+      material.uniforms.uTerrainMin.value.set(grid.minX, grid.minY);
+      material.uniforms.uTerrainSize.value = grid.size;
+    }
+  }
+
+  /** Colore par hauteur au-dessus du sol plutot que par classe. */
+  setHeightMode(on, maxHeight = 30) {
+    this.shared.uHeightMode = on && this.terrainTexture ? 1 : 0;
+    this.shared.uHeightMax = maxHeight;
+    this._pushShared();
+  }
+
   /** Amplitude de la variation de teinte, 0 pour une couleur uniforme. */
   setTint(amount) {
     this.shared.uTint = amount;
@@ -267,6 +352,13 @@ export class PointsMaterialPool {
       material.uniforms.uClipRadius.value = this.shared.uClipRadius;
       material.uniforms.uClipSquare.value = this.shared.uClipSquare;
       material.uniforms.uTint.value = this.shared.uTint;
+      material.uniforms.uHeightMode.value = this.shared.uHeightMode;
+      material.uniforms.uHeightMax.value = this.shared.uHeightMax;
+      if (this.terrainTexture) {
+        material.uniforms.uTerrain.value = this.terrainTexture;
+        material.uniforms.uTerrainMin.value.set(this.terrainMin[0], this.terrainMin[1]);
+        material.uniforms.uTerrainSize.value = this.terrainSize;
+      }
     }
   }
 
@@ -274,5 +366,6 @@ export class PointsMaterialPool {
     for (const material of this.materials.values()) material.dispose();
     this.materials.clear();
     this.texture.dispose();
+    this.terrainTexture?.dispose();
   }
 }

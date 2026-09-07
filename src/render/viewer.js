@@ -5,6 +5,7 @@ import { PointsMaterialPool } from './pointsMaterial.js';
 import { PRESETS, getPreset } from './presets.js';
 import { DioramaRenderer } from './diorama.js';
 import { histogram } from '../analysis/classStats.js';
+import { TerrainGrid, heightStats } from '../analysis/terrain.js';
 
 /**
  * Rendu du nuage avec niveau de détail piloté par la caméra.
@@ -43,6 +44,14 @@ export class Viewer {
     this.clipCenter = [0, 0];
     this.clipShape = null;
     this.pointScale = 1;
+    // Grille de terrain : 3 km de cote en 512 cellules, soit ~5,9 m. Le sol
+    // varie peu a cette echelle, et une grille plus fine ferait exploser le
+    // cout du comblement, qui parcourt la grille entiere a chaque passe.
+    this.terrain = null;
+    this.terrainCells = 512;
+    this.terrainSize = 3000;
+    this.terrainStats = null;
+    this._terrainBuiltAt = 0;
     this.preset = getPreset('lecture');
     this.presetName = 'lecture';
     // Toutes les dalles partagent une seule origine de scene, celle de la
@@ -103,6 +112,9 @@ export class Viewer {
   setTile(tile, nodes) {
     this.clear();
     this.origin = tile.origin;
+    // La grille suit le repere de scene, comme les points.
+    this.terrain = new TerrainGrid({ center: [0, 0], size: this.terrainSize, cells: this.terrainCells });
+    this.terrainStats = null;
     this.addTile(tile, nodes);
 
     const { bounds } = tile.header;
@@ -187,8 +199,65 @@ export class Viewer {
     for (const [code, n] of points.userData.hist) {
       this.classCounts.set(code, (this.classCounts.get(code) ?? 0) + n);
     }
+    // Le terrain se nourrit de tout ce qui passe, y compris des noeuds qui
+    // seront evinces ensuite : le sol ne bouge pas, autant le garder.
+    this.terrain?.addPoints(positions, classification);
     this.stats.nodesInScene = this.loaded.size;
     this.stats.pointsInScene += classification.length;
+  }
+
+  /**
+   * Fige le terrain et le publie au rendu.
+   *
+   * Le comblement des trous parcourt la grille entiere a chaque passe, donc on
+   * ne le refait pas a chaque noeud recu : un intervalle minimal suffit, le sol
+   * n'ayant aucune raison de changer entre deux images.
+   */
+  buildTerrain({ minInterval = 700, force = false } = {}) {
+    if (!this.terrain) return null;
+    const maintenant = performance.now();
+    if (!force && this.terrain.filled) return this.terrainStats;
+    if (!force && maintenant - this._terrainBuiltAt < minInterval) return this.terrainStats;
+
+    const bilan = this.terrain.build();
+    this._terrainBuiltAt = maintenant;
+    this.materials.setTerrain(this.terrain);
+    if (this.preset.heightMode) {
+      this.materials.setHeightMode(true, this.preset.heightMax ?? 30);
+    }
+    this.terrainStats = {
+      ...bilan,
+      coverage: this.terrain.coverage(),
+      cells: this.terrain.cells,
+      step: this.terrain.step,
+    };
+    return this.terrainStats;
+  }
+
+  /** Statistiques de hauteur de la vegetation actuellement en scene. */
+  canopyStats(codes = new Set([3, 4, 5])) {
+    if (!this.terrain || !this.terrain.filled) return null;
+    let total = 0;
+    let inconnus = 0;
+    const hauteurs = [];
+    for (const points of this.loaded.values()) {
+      const pos = points.geometry.getAttribute('position').array;
+      const cls = points.geometry.getAttribute('classification').array;
+      const s = heightStats(this.terrain, pos, cls, codes);
+      if (s.count === 0 && s.unknown === 0) continue;
+      total += s.count;
+      inconnus += s.unknown;
+      if (Number.isFinite(s.p99)) hauteurs.push(s.p99);
+      if (Number.isFinite(s.max)) hauteurs.push(s.max);
+    }
+    if (hauteurs.length === 0) return { count: total, unknown: inconnus, max: NaN, p99: NaN };
+    hauteurs.sort((a, b) => a - b);
+    return {
+      count: total,
+      unknown: inconnus,
+      max: hauteurs[hauteurs.length - 1],
+      p99: hauteurs[Math.floor(hauteurs.length * 0.5)],
+    };
   }
 
   /**
@@ -233,6 +302,11 @@ export class Viewer {
 
     if (preset.diorama) this.diorama.set(preset.diorama);
     this.materials.setTint(preset.tint ?? preset.diorama?.tint ?? 0);
+
+    // La couleur par hauteur remplace la couleur par classe ; sans terrain
+    // pret, on n'active rien plutot que de peindre du gris partout.
+    this.materials.setHeightMode(Boolean(preset.heightMode), preset.heightMax ?? 30);
+    if (preset.heightMode) this.buildTerrain({ force: true });
 
     this.clipShape = preset.shape ?? null;
     if (this.clipShape) {
@@ -386,6 +460,9 @@ export class Viewer {
 
   clear() {
     this._removePlinth();
+    this.terrain = null;
+    this.terrainStats = null;
+    this.materials.setTerrain(null);
     for (const id of [...this.loaded.keys()]) this.removeNode(id);
     this.pending.clear();
     this.classCounts.clear();
@@ -432,6 +509,11 @@ export class Viewer {
 
   /** Confronte la sélection à la scène : retire le superflu, demande le manquant. */
   refresh({ maxRequests = 4 } = {}) {
+    // Le terrain se refige quand de nouveaux points de sol sont arrives ; la
+    // methode porte son propre intervalle minimal, l'appeler a chaque image ne
+    // coute donc rien la plupart du temps.
+    if (this.materials.shared.uHeightMode > 0.5) this.buildTerrain();
+
     const selection = this.select();
     if (!selection) return null;
     this.stats.lastSelection = {
