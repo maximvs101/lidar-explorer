@@ -38,6 +38,7 @@ const el = {
   pointSizeVal: document.getElementById('pointsizeval'),
   colorMode: document.getElementById('colormode'),
   round: document.getElementById('round'),
+  neighbours: document.getElementById('neighbours'),
   detail: document.getElementById('detail'),
   detailVal: document.getElementById('detailval'),
   measureBtn: document.getElementById('measure'),
@@ -270,6 +271,7 @@ let voisines = 0;
 
 async function extendToNeighbours() {
   if (!session || !viewer.sceneOrigin || extendToNeighbours.busy) return;
+  if (!el.neighbours.checked) return;
   extendToNeighbours.busy = true;
   try {
     const [ox, oy] = viewer.sceneOrigin;
@@ -683,7 +685,7 @@ function renderScale() {
 /** Ne réinterroge l'index que si la vue a réellement bougé. */
 let lastReach = null;
 function maybeExtend() {
-  if (!session) return;
+  if (!session || !el.neighbours.checked) return;
   const target = viewer.controls.target;
   const signature = [
     Math.round(target.x / 100),
@@ -694,6 +696,47 @@ function maybeExtend() {
   lastReach = signature;
   extendToNeighbours();
 }
+
+/**
+ * Ramène la scène à la seule dalle choisie sur la carte.
+ *
+ * Décocher l'option doit défaire ce qu'elle avait fait, sinon les voisines déjà
+ * chargées resteraient là et le réglage aurait l'air de ne rien faire.
+ *
+ * La dalle d'origine peut avoir été relâchée si la vue s'en est éloignée — le
+ * chargement ne garde que les plus proches du point visé. On retombe alors sur
+ * la plus proche de ce qui reste, plutôt que de vider la scène.
+ */
+function collapseToSingleTile() {
+  if (!session || viewer.tiles.size <= 1) return;
+  const cible = viewer.controls.target;
+
+  let garde = viewer.hasTile(session.tile.url) ? session.tile.url : null;
+  if (!garde) {
+    let meilleure = Infinity;
+    for (const [cle, entry] of viewer.tiles) {
+      const d = Math.hypot(entry.localCenter[0] - cible.x, entry.localCenter[1] - cible.y);
+      if (d < meilleure) { meilleure = d; garde = cle; }
+    }
+  }
+  for (const cle of [...viewer.tiles.keys()]) {
+    if (cle !== garde) viewer.removeTile(cle);
+  }
+  voisines = 0;
+  logCompteur('voisines', 'voisines relâchées — dalle seule');
+}
+
+el.neighbours.addEventListener('change', () => {
+  if (el.neighbours.checked) {
+    // La signature de vue est remise à zéro : sans cela, `maybeExtend`
+    // considérerait que rien n'a bougé et n'irait rien chercher avant le
+    // prochain déplacement de caméra.
+    lastReach = null;
+    extendToNeighbours();
+  } else {
+    collapseToSingleTile();
+  }
+});
 
 /**
  * Où en est le chargement.
@@ -854,6 +897,10 @@ window.__renderLegend = renderLegend;
 window.__renderScale = renderScale;
 window.__extend = extendToNeighbours;
 window.__maybeExtend = maybeExtend;
+window.__setNeighbours = (on) => {
+  el.neighbours.checked = on;
+  el.neighbours.dispatchEvent(new Event('change'));
+};
 window.__setPreset = setPreset;
 window.__setMeasuring = setMeasuring;
 window.__picks = () => picks;

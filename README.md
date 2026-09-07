@@ -25,7 +25,8 @@ npm run build
    dit explicitement plutôt que d'ouvrir une scène vide.
 2. **« Charger le nuage »**. Le niveau grossier apparaît en moins d'une seconde,
    le détail se raffine ensuite selon l'endroit où vous regardez, et les dalles
-   voisines viennent d'elles-mêmes quand vous vous déplacez.
+   voisines viennent d'elles-mêmes quand vous vous déplacez — une case permet de
+   s'en tenir à la dalle choisie.
 3. **Naviguer**, puis choisir un preset ou une source de couleur selon ce que
    vous cherchez à voir.
 
@@ -71,6 +72,13 @@ preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
   capteur, procédé de classement).
 - **Niveau de détail piloté par la caméra**, plafonné en nombre de points, avec
   éviction des nœuds hors champ.
+- **Dalles voisines chargées au déplacement**, neuf au plus, les plus lointaines
+  relâchées. L'option se décoche pour s'en tenir à la dalle choisie sur la
+  carte : moins de requêtes sur un service qui plafonne à une dizaine
+  simultanées, une emprise qui ne bouge plus sous une mesure ou un export, et
+  tout le budget de points pour ce kilomètre carré. La décocher relâche aussi
+  les voisines déjà chargées — un réglage qui ne défait pas ce qu'il avait fait
+  donne l'impression de ne rien faire.
 - **Filtres de classe** instantanés : la classification vit sur le GPU, un octet
   par point indexant une palette.
 - **Mesure dans la scène** — deux clics donnent distance 3D, distance

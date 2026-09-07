@@ -61,9 +61,12 @@
       #colorrow select { flex: 1; background: var(--panel); color: var(--text);
                          border: 1px solid var(--line); border-radius: 4px;
                          padding: 3px 5px; font: inherit; }
-      #roundrow { display: flex; align-items: center; gap: 7px; margin: 2px 0 6px;
-                  font-size: 11px; color: var(--dim); cursor: pointer; user-select: none; }
-      #roundrow input { margin: 0; cursor: pointer; accent-color: var(--accent); }
+      #roundrow, #neighbourrow { display: flex; align-items: center; gap: 7px;
+                  margin: 2px 0 6px; font-size: 11px; color: var(--dim);
+                  cursor: pointer; user-select: none; }
+      #roundrow input, #neighbourrow input { margin: 0; cursor: pointer;
+                  accent-color: var(--accent); }
+      #neighbourhint { margin: 0 0 8px; }
       #exportrow { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px;
                    font-size: 11px; color: var(--dim); }
       #exportrow select { background: var(--panel); color: var(--text);
@@ -138,7 +141,7 @@
         </table>
         <p class="foot">Le détail se charge selon l'endroit où vous regardez : approchez-vous
           pour l'affiner, reculez pour couvrir plus large. Les dalles voisines viennent
-          d'elles-mêmes.</p>
+          d'elles-mêmes, sauf si vous décochez l'option sous « Affichage ».</p>
       </details>
 
       <div id="notice"></div>
@@ -197,6 +200,13 @@
       </label>
       <p class="foot" id="detailhint">Plus le seuil est bas, plus l'application descend
         dans l'octree : le nuage gagne en résolution et le nombre de points monte.</p>
+      <label id="neighbourrow">
+        <input id="neighbours" type="checkbox" checked>
+        <span>charger les dalles voisines</span>
+      </label>
+      <p class="foot" id="neighbourhint">Décocher s'en tient à la dalle choisie sur la carte :
+        moins de requêtes, une emprise qui ne bouge plus, et tout le budget de points
+        pour ce kilomètre carré.</p>
       <div id="presets">
         <button data-preset="tout">tout</button>
         <button data-preset="sol">sol</button>
