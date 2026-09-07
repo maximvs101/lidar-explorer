@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PALETTE, NEUTRAL_PALETTE } from '../src/render/pointsMaterial.js';
+import { COLOR_MODES, DEFAULT_PALETTE, NEUTRAL_PALETTE, PointsMaterialPool }
+  from '../src/render/pointsMaterial.js';
 import { RELIEF_DEFAULTS, lightVector } from '../src/render/relief.js';
 import { PRESETS, PRESET_NAMES, getPreset } from '../src/render/presets.js';
 import { CLASS_NAMES } from '../src/analysis/classStats.js';
@@ -146,8 +147,7 @@ describe('presets d’affichage', () => {
 
   it('nomme une source de couleur connue', () => {
     for (const name of PRESET_NAMES) {
-      expect(['classe', 'hauteur', 'audit', 'intensite', 'retours', 'bande'])
-        .toContain(PRESETS[name].colorMode ?? 'classe');
+      expect(Object.keys(COLOR_MODES)).toContain(PRESETS[name].colorMode ?? 'classe');
     }
   });
 
@@ -175,5 +175,91 @@ describe('réglages d’affichage et presets', () => {
     for (const name of PRESET_NAMES) {
       expect(PRESETS[name].minScreenError, `${name}`).toBeUndefined();
     }
+  });
+});
+
+describe('codes des modes de coloration', () => {
+  // Le shader compare un float au code du mode. Ces codes étaient écrits deux
+  // fois — dans la table et à la main dans le GLSL — et retirer un mode du
+  // milieu décalait tous les suivants sans que rien ne le signale : chaque mode
+  // affichait alors celui d'à côté. Ils sont maintenant injectés depuis la
+  // table, et ces contrôles vérifient qu'ils le restent.
+  const source = () => new PointsMaterialPool().forSize(1).vertexShader;
+
+  it('sont uniques et contigus depuis zéro', () => {
+    const codes = Object.values(COLOR_MODES).sort((a, b) => a - b);
+    expect(codes).toEqual(codes.map((_, i) => i));
+  });
+
+  it('laisse la classe en mode par défaut', () => {
+    // Le rendu retombe sur la couleur de classe dès qu'un mode n'est pas
+    // servable ; ce repli n'a de sens que si son code est le zéro initial.
+    expect(COLOR_MODES.classe).toBe(0);
+    expect(new PointsMaterialPool().shared.uColorMode).toBe(COLOR_MODES.classe);
+  });
+
+  it('écrit dans le shader le code que porte la table', () => {
+    const glsl = source();
+    for (const nom of ['hauteur', 'intensite', 'retours', 'bande']) {
+      const attendu = `abs(uColorMode - ${COLOR_MODES[nom].toFixed(1)}) < 0.5`;
+      expect(glsl, `garde du mode ${nom}`).toContain(attendu);
+    }
+  });
+
+  it('n’a pas gardé de comparaison écrite à la main', () => {
+    // Un seuil resté en dur survivrait à une renumérotation de la table.
+    expect(source()).not.toMatch(/uColorMode\s*[<>]/);
+  });
+
+  it('donne une garde distincte à chaque mode coloré', () => {
+    const glsl = source();
+    const gardes = [...glsl.matchAll(/abs\(uColorMode - ([\d.]+)\) < 0\.5/g)].map((m) => m[1]);
+    expect(new Set(gardes).size).toBe(gardes.length);
+    // La classe n'a pas de garde : c'est ce qui reste quand aucune ne prend.
+    expect(gardes).not.toContain(COLOR_MODES.classe.toFixed(1));
+  });
+});
+
+describe('mode hauteur et terrain', () => {
+  // Sans modèle de terrain, la hauteur au-dessus du sol n'existe pas : le
+  // shader peindrait tout en gris « terrain inconnu », ce qui ressemble à un
+  // rendu raté plutôt qu'à un mode indisponible. Le rendu retombe donc sur la
+  // couleur de classe, et l'interface relit le mode réellement appliqué.
+  const grille = () => ({
+    cells: 2, size: 100, minX: -50, minY: -50,
+    height: new Float32Array([1, 2, 3, 4]),
+    known: new Uint8Array([1, 1, 1, 1]),
+  });
+
+  it('refuse la hauteur tant qu’aucun terrain n’est publié', () => {
+    const pool = new PointsMaterialPool();
+    pool.setColorMode('hauteur');
+    expect(pool.shared.uColorMode).toBe(COLOR_MODES.classe);
+  });
+
+  it('l’accepte dès qu’un terrain est publié, et la reprend s’il disparaît', () => {
+    // Les deux sens : un contrôle qui ne peut pas basculer ne prouve rien.
+    const pool = new PointsMaterialPool();
+    pool.setTerrain(grille());
+    pool.setColorMode('hauteur');
+    expect(pool.shared.uColorMode).toBe(COLOR_MODES.hauteur);
+
+    pool.setTerrain(null);
+    pool.setColorMode('hauteur');
+    expect(pool.shared.uColorMode).toBe(COLOR_MODES.classe);
+  });
+
+  it('laisse passer les modes qui ne demandent pas de terrain', () => {
+    const pool = new PointsMaterialPool();
+    for (const mode of ['intensite', 'retours', 'bande']) {
+      pool.setColorMode(mode);
+      expect(pool.shared.uColorMode, mode).toBe(COLOR_MODES[mode]);
+    }
+  });
+
+  it('retombe sur la classe pour un mode inconnu', () => {
+    const pool = new PointsMaterialPool();
+    pool.setColorMode('nexistepas');
+    expect(pool.shared.uColorMode).toBe(COLOR_MODES.classe);
   });
 });

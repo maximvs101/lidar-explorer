@@ -81,7 +81,7 @@ preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
 - **Export d'image** jusqu'à quatre fois la résolution de l'écran. Les rayons
   d'ombrage, exprimés en texels, sont mis à l'échelle du facteur d'export :
   sans cela l'image produite ne ressemblerait pas à ce qu'on voyait.
-- **Les trois rasters dérivés de l'IGN**, demandés au service WMS sur l'emprise
+- **Les rasters dérivés de l'IGN**, demandés au service WMS sur l'emprise
   chargée, en float32 brut (`image/x-bil;bits=32`) : 4 Mo pour 3 km en 1024
   cellules, soit une maille de 2,9 m sans aucun trou. Le format évite d'ajouter
   un décodeur GeoTIFF. Chacun n'est demandé que par le mode qui s'en sert.
@@ -90,25 +90,16 @@ preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
   |---|---|
   | `MNT` | le sol. Il remplace le terrain qu'on reconstruisait depuis les seuls points classés sol, qui avait des trous sous le couvert |
   | `MNH` | la hauteur au-dessus du sol sur **toute** l'emprise, quel que soit le niveau de détail chargé : c'est la référence contre laquelle se juge la statistique tirée des points affichés |
-  | `MNS` | la surface. Elle sert de plafond à l'audit |
 
   Quand un raster n'est pas publié sur la zone, le panneau le dit ; pour le MNT,
   le terrain reconstruit depuis les points de sol prend le relais.
 
-- **Audit de classification** — quatre contrôles objectifs : végétation haute
-  posée au sol, bâtiment sous le terrain, surface d'eau non horizontale, et
-  points au-dessus du MNS. Ce dernier se lit par famille de classes, jamais en un
-  chiffre global : le MNS est une grille, il ne tient ni câble, ni branche, ni
-  antenne, et un dépassement n'est pas une faute en soi. Mesuré sur une dalle de
-  Toulouse — sol et eau **0,06 %** et **0,00 %**, bâti 18 %, non classés 23,5 %,
-  sursol pérenne (pylônes, mâts) **98 %**. Le sol et l'eau font le témoin : ils ne
-  dépassent jamais une surface correctement calée.
 - **Coloration au choix** — par classe, par **intensité** (réflectance, bornée
   automatiquement sur les centiles de la zone chargée), par **nombre de retours**
   (un tir multi-écho a traversé du feuillage), par **bande de vol** (les passes
   de l'avion se recouvrent, ce qui explique une densité trois fois supérieure à
-  celle annoncée), par hauteur au-dessus du sol, ou en mode audit.
-- **Quatre presets d'affichage**, qui règlent d'un clic nuancier, fond, source
+  celle annoncée), ou par hauteur au-dessus du sol.
+- **Trois presets d'affichage**, qui règlent d'un clic nuancier, fond, source
   de couleur et relief :
 
   | preset | à quoi il sert |
@@ -116,7 +107,6 @@ preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
   | `lecture` | nuancier de classification sur fond sombre, sans post-traitement — la vue de référence |
   | `relief` | nuancier neutre et ombrage appuyé : c'est la vue qui donne le plus à lire sur la structure du bâti |
   | `canopée` | couleur par hauteur au-dessus du sol, du sol nu aux émergents, avec les statistiques de canopée |
-  | `audit` | contradictions de classification en rouge, avec le détail chiffré |
 
   Ils ne fixent ni la taille ni la forme des points, ni le seuil de détail : ce
   sont des préférences d'affichage, conservées d'un preset à l'autre pour qu'on
@@ -142,9 +132,9 @@ preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
   l'ouverture de la dalle au lieu de s'améliorer à mesure que les points
   arrivent.
 - Les rasters sont lus à **2,9 m alors qu'ils sont produits à 50 cm** : le sol,
-  lisse, n'y perd rien, mais la surface si. Mesuré sur une même emprise, la part
-  de points dépassant le MNS de 2 m passe de 7,6 % à 50 cm à 15,8 % à 2,9 m. Le
-  chiffre décrit la lecture faite, pas la surface.
+  lisse, n'y perd rien, la végétation presque rien — le MNH y perd 0,2 m au
+  centile 99 et 1 m sur son maximum. Une surface à arêtes vives, elle, y perdrait
+  beaucoup plus.
 - Le service assortit ses **réponses d'erreur** d'un `Cache-Control` de
   **vingt et un jours**. Une panne d'une seconde reste donc figée trois semaines
   dans le cache du navigateur, et redemander la même URL ne fait que relire
@@ -160,7 +150,8 @@ preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
 ## Vérifications
 
 La suite de tests couvre les modules purs — décodage COPC, sélection de niveau
-de détail, projection, modèle de terrain, audit, mesures. Elle est **éprouvée
+de détail, projection, modèles de terrain, déclaration des sources, mesures.
+Elle est **éprouvée
 par mutation** : des défauts sont injectés un par un pour vérifier qu'elle les
 attrape, et plusieurs trous ont été trouvés ainsi, dont un test qui vérifiait sa
 propre convention au lieu de celle de la bibliothèque.
@@ -175,22 +166,46 @@ et 91 % restent sous 20 cm. Le témoin — la même lecture sur une grille
 volontairement retournée nord/sud — tombe à 7,3 % sous 20 cm : la mesure
 distingue donc bien un terrain calé d'un terrain qui ne l'est pas.
 
-Les trois rasters sont contrôlés l'un par l'autre : sur nos propres grilles,
-`MNS − MNT − MNH` a une médiane nulle, des centiles à ±0,28 m et 0,15 % de
-cellules au-delà du mètre. Et l'audit porte son propre témoin — le sol et l'eau
-ne dépassent la surface que pour 0,06 % et 0,00 % de leurs points.
+Les rasters ont été contrôlés l'un par l'autre, MNS compris : sur nos propres
+grilles, `MNS − MNT − MNH` a une médiane nulle, des centiles à ±0,28 m et 0,15 %
+de cellules au-delà du mètre. Le MNS n'est plus demandé par la page — il ne
+servait qu'à l'audit de classification, retiré depuis — et la déclaration des
+sources ne le mentionne donc pas : une source déclarée mais jamais interrogée
+est une déclaration fausse.
+
+La déclaration des sources est elle-même sous contrôle. Elle ne recopie aucune
+adresse : elle lit les constantes que le code appelle, et les tests vérifient
+que toute couche interrogée y figure, qu'aucune n'y figure en trop, que chaque
+dépendance du `package.json` y est déclarée avec sa licence, et que les numéros
+de version viennent du fichier plutôt que d'une saisie.
 
 ## Données et licences
 
-- **LiDAR HD, Plan IGN, index des dalles** : © IGN — Géoplateforme, sous
-  [Licence Ouverte Etalab 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence/).
-- L'organisation en styles nommés vient de
-  [prettymaps](https://github.com/marceloprates/prettymaps) et de
-  [prettymapp](https://github.com/chrieke/prettymapp). Aucun code ni aucune
-  couleur n'en est repris : les nuanciers décoratifs ont été retirés lors du
-  recentrage sur l'analyse.
+La page les déclare elle-même, dans son panneau **Sources**. Ce n'est pas une
+liste tenue à la main : elle est construite à partir des constantes que le code
+appelle réellement, et des dépendances du `package.json`. Une déclaration
+recopiée à côté du code cesse d'être vraie au premier changement, sans erreur ni
+diff — et une mention de source fausse est pire que pas de mention du tout.
 
-## Stack
+Tout vient de l'**IGN — Géoplateforme**, sous
+[Licence Ouverte / Open Licence 2.0 (Etalab)](https://www.etalab.gouv.fr/licence-ouverte-open-licence/),
+et rien n'est réhébergé : le navigateur lit directement chez le producteur, sans
+serveur intermédiaire ni clé d'accès.
 
-Vite, JavaScript sans framework, Three.js pour le rendu, laz-perf (WASM) pour le
-décodage LAZ dans un Web Worker, Leaflet et proj4 pour la carte et le Lambert-93.
+| donnée | service | couches |
+|---|---|---|
+| nuages de points LiDAR HD | HTTP `Range` sur `data.geopf.fr/telechargement/` | — |
+| index des dalles | WFS 2.0 `data.geopf.fr/wfs/ows` | `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` |
+| modèles dérivés | WMS 1.3.0 `data.geopf.fr/wms-r/wms` | `IGNF_LIDAR-HD_{MNT,MNH}_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93` |
+| fonds de carte | WMTS 1.0.0 `data.geopf.fr/wmts` | `GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2`, `ORTHOIMAGERY.ORTHOPHOTOS` |
+
+Logiciels embarqués : **Three.js** (MIT) pour le rendu, **laz-perf** (Apache-2.0)
+pour le décodage LAZ en WebAssembly dans un Web Worker, **Leaflet** (BSD-2-Clause)
+pour la carte, **proj4** (MIT) pour le Lambert-93. Le tout construit avec Vite,
+en JavaScript sans framework.
+
+L'organisation en styles nommés vient de
+[prettymaps](https://github.com/marceloprates/prettymaps) et de
+[prettymapp](https://github.com/chrieke/prettymapp). Aucun code ni aucune
+couleur n'en est repris : les nuanciers décoratifs ont été retirés lors du
+recentrage sur l'analyse.

@@ -1,7 +1,9 @@
 import { NetworkError, ProtocolError, RateLimitError } from '../net/errors.js';
 
-const WFS_ENDPOINT = 'https://data.geopf.fr/wfs/ows';
-const LAYER = 'IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle';
+import { WFS } from './geoplateforme.js';
+
+const WFS_ENDPOINT = WFS.endpoint;
+const LAYER = WFS.layer;
 
 /**
  * Index des dalles LiDAR HD, via le WFS public de la Géoplateforme (sans clé).

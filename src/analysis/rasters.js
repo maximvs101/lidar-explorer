@@ -6,11 +6,13 @@
  *
  * - **MNT** — le sol. Il remplace le terrain qu'on reconstruisait depuis les
  *   seuls points classés sol, qui avait des trous sous le couvert.
- * - **MNS** — la surface, c'est-à-dire le dessus de tout : cimes, toitures,
- *   ouvrages. Sert de référence pour juger ce qui dépasse.
- * - **MNH** — la hauteur au-dessus du sol, soit la différence des deux autres.
- *   Vérifié : la médiane de `MNS − MNT − MNH` est nulle, et 0,14 % des pixels
- *   seulement s'en écartent de plus d'un mètre, tous aux bordures d'objets.
+ * - **MNH** — la hauteur au-dessus du sol, mesurée sur toute l'emprise quel que
+ *   soit le niveau de détail chargé.
+ *
+ * L'IGN en publie un troisième, le MNS — la surface, le dessus de tout. Il
+ * n'est pas déclaré ici : la page déclare ses sources, et une source déclarée
+ * mais jamais interrogée est une déclaration fausse. Le rétablir tient en une
+ * entrée de la table ci-dessous, `altitude: true` comme le MNT.
  *
  * Le service WMS accepte une emprise et une taille arbitraires, donc on demande
  * précisément la zone chargée à la résolution voulue, sans découper en dalles.
@@ -23,13 +25,14 @@
  * Licence Etalab 2.0, comme le reste de la Géoplateforme : pas de clé.
  */
 
+import { WMS } from '../geo/geoplateforme.js';
 import { SampledGrid } from './terrain.js';
 
-export const WMS_BASE = 'https://data.geopf.fr/wms-r/wms';
+export const WMS_BASE = WMS.endpoint;
 
 /**
  * `altitude` distingue les deux natures de raster, et ce n'est pas un détail :
- * MNT et MNS portent des altitudes NGF, que la scène doit ramener dans son
+ * le MNT porte une altitude NGF, que la scène doit ramener dans son
  * repère local ; le MNH porte déjà une **hauteur relative**, à laquelle
  * appliquer la même translation donnerait des arbres à −600 m.
  */
@@ -37,11 +40,6 @@ export const PRODUITS = {
   mnt: {
     layer: 'IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93',
     libelle: 'MNT',
-    altitude: true,
-  },
-  mns: {
-    layer: 'IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93',
-    libelle: 'MNS',
     altitude: true,
   },
   mnh: {

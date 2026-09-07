@@ -35,11 +35,11 @@ describe('URL du service', () => {
     const couche = (produit) => new URL(rasterUrl({ bbox: [0, 0, 1, 1], pixels: 4, produit }))
       .searchParams.get('LAYERS');
     expect(couche('mnt')).toMatch(/_MNT_/);
-    expect(couche('mns')).toMatch(/_MNS_/);
     expect(couche('mnh')).toMatch(/_MNH_/);
-    // Trois couches distinctes : une faute de frappe qui en collerait deux
+    // Des couches distinctes : une faute de frappe qui en collerait deux
     // rendrait des hauteurs plausibles et fausses.
-    expect(new Set(['mnt', 'mns', 'mnh'].map(couche)).size).toBe(3);
+    const couches = Object.keys(PRODUITS).map(couche);
+    expect(new Set(couches).size).toBe(couches.length);
     expect(() => rasterUrl({ bbox: [0, 0, 1, 1], pixels: 4, produit: 'mno' })).toThrow(/inconnu/);
   });
 
@@ -163,7 +163,7 @@ describe('récupération', () => {
   });
 
   it('ne translate PAS le MNH, qui est déjà une hauteur', async () => {
-    // Le MNT et le MNS portent des altitudes NGF, que la scène ramène dans son
+    // Le MNT porte une altitude NGF, que la scène ramène dans son
     // repère ; le MNH porte une hauteur au-dessus du sol. Lui appliquer la même
     // translation donnerait des arbres à −600 m — sans la moindre erreur.
     const commun = {

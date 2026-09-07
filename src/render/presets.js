@@ -50,13 +50,6 @@ export const PRESETS = {
     // renforcer fausserait la lecture des couleurs.
     relief: { ...BASE, strength: 12, lightAmount: 0.35 },
   },
-  audit: {
-    label: 'audit',
-    palette: NEUTRAL_PALETTE,
-    background: 0xf6f5f2,
-    post: false,
-    colorMode: 'audit',
-  },
 };
 
 export const PRESET_NAMES = Object.keys(PRESETS);

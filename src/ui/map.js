@@ -1,5 +1,6 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { LICENCE, WMTS } from '../geo/geoplateforme.js';
 import { toLambert93, toWgs84 } from '../geo/projection.js';
 
 /**
@@ -7,15 +8,13 @@ import { toLambert93, toWgs84 } from '../geo/projection.js';
  * pseudo-Mercator, donc indexé exactement comme des tuiles XYZ classiques :
  * TILEMATRIX/TILEROW/TILECOL correspondent à z/y/x.
  */
-const PLAN_IGN =
-  'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
-  '&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM' +
-  '&FORMAT=image/png&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
+const tuiles = (couche, format) =>
+  `${WMTS.endpoint}?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0` +
+  `&LAYER=${couche}&STYLE=normal&TILEMATRIXSET=PM` +
+  `&FORMAT=${format}&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}`;
 
-const ORTHO_IGN = PLAN_IGN.replace(
-  'LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal',
-  'LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal',
-).replace('FORMAT=image/png', 'FORMAT=image/jpeg');
+const PLAN_IGN = tuiles(WMTS.plan, 'image/png');
+const ORTHO_IGN = tuiles(WMTS.ortho, 'image/jpeg');
 
 /** En deçà de ce zoom, une vue couvre trop de dalles pour qu'on les dessine. */
 const COVERAGE_MIN_ZOOM = 12;
@@ -30,7 +29,7 @@ export class LocationPicker {
 
     const plan = L.tileLayer(PLAN_IGN, {
       maxZoom: 19,
-      attribution: 'Fond de carte et LiDAR HD : © IGN — Géoplateforme (licence Etalab 2.0)',
+      attribution: `Fond de carte et LiDAR HD : © ${LICENCE.producteur} — ${LICENCE.nom}`,
     }).addTo(this.map);
     const ortho = L.tileLayer(ORTHO_IGN, { maxZoom: 19 });
     L.control.layers({ 'Plan IGN': plan, 'Photo aérienne': ortho }, {}, { position: 'topright' }).addTo(this.map);

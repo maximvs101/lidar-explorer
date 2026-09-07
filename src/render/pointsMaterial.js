@@ -52,16 +52,26 @@ const FALLBACK = [90, 90, 95];
 /**
  * Modes de coloration. Un seul uniforme les porte tous : trois interrupteurs
  * separes finissaient par s'empiler en cascade de `if`, avec des combinaisons
- * qui n'avaient aucun sens (hauteur ET audit ET intensite).
+ * qui n'avaient aucun sens (hauteur ET intensite).
  */
 export const COLOR_MODES = {
   classe: 0,
   hauteur: 1,
-  audit: 2,
-  intensite: 3,
-  retours: 4,
-  bande: 5,
+  intensite: 2,
+  retours: 3,
+  bande: 4,
 };
+
+/**
+ * Test d'egalite du mode, injecte dans le shader depuis la table ci-dessus.
+ *
+ * GLSL n'a pas d'entier ici : le mode voyage en float, et la comparaison passe
+ * donc par une distance. Ce qui compte est que les seuils ne soient ecrits
+ * qu'une fois : ils l'ont ete a la main, et retirer un mode du milieu de la
+ * table decalait tous les suivants sans que rien ne le signale — chaque mode
+ * affichait alors celui d'a cote.
+ */
+const estMode = (nom) => `abs(uColorMode - ${COLOR_MODES[nom].toFixed(1)}) < 0.5`;
 
 const VERTEX = /* glsl */ `
   attribute float classification;
@@ -113,7 +123,7 @@ const VERTEX = /* glsl */ `
     // --- Intensite : mesure physique, donc echelle neutre. Elle est bornee sur
     // des centiles et non sur le min/max, qu'un seul echo aberrant suffirait a
     // etirer jusqu'a aplatir tout le reste.
-    if (uColorMode > 2.5 && uColorMode < 3.5) {
+    if (${estMode('intensite')}) {
       float t = clamp((intensity - uIntensityRange.x)
                       / max(uIntensityRange.y - uIntensityRange.x, 1.0), 0.0, 1.0);
       vColor = mix(vec3(0.13, 0.13, 0.15), vec3(0.97, 0.95, 0.88), t);
@@ -122,7 +132,7 @@ const VERTEX = /* glsl */ `
     // --- Retours : le nombre total d'echos du tir, sur les 4 bits hauts. Un tir
     // qui en renvoie plusieurs a traverse quelque chose — c'est la signature du
     // feuillage, et ce que le lidar a d'irremplacable.
-    if (uColorMode > 3.5 && uColorMode < 4.5) {
+    if (${estMode('retours')}) {
       float total = floor(returns / 16.0);
       if (total <= 1.5)      vColor = vec3(0.72, 0.71, 0.68);
       else if (total <= 2.5) vColor = vec3(0.85, 0.78, 0.35);
@@ -131,34 +141,11 @@ const VERTEX = /* glsl */ `
     }
 
     // --- Bande de vol : montre le plan de vol et les recouvrements entre passes.
-    if (uColorMode > 4.5) {
+    if (${estMode('bande')}) {
       vColor = teinteQualitative(source);
     }
 
-    // Mode audit : on ne peint en rouge que les points qui contredisent la
-    // definition de leur propre classe, et seulement la ou le sol est connu.
-    // Ailleurs, le gris dit « rien a redire », pas « verifie ».
-    if (uColorMode > 1.5 && uColorMode < 2.5) {
-      vec2 uva = (position.xy - uTerrainMin) / uTerrainSize;
-      vec3 neutre = vec3(0.72, 0.71, 0.68);
-      if (uva.x < 0.0 || uva.x > 1.0 || uva.y < 0.0 || uva.y > 1.0) {
-        vColor = vec3(0.55, 0.55, 0.58);
-      } else {
-        float solA = texture2D(uTerrain, uva).r;
-        if (solA < -9000.0) {
-          vColor = vec3(0.55, 0.55, 0.58); // sol inconnu : non jugeable
-        } else {
-          float ha = position.z - solA;
-          vColor = neutre;
-          // Vegetation haute (5) sous 1 m : contredit sa strate.
-          if (abs(classification - 5.0) < 0.5 && ha < 1.0) vColor = vec3(0.90, 0.24, 0.24);
-          // Batiment (6) a plus d'un metre sous le terrain.
-          if (abs(classification - 6.0) < 0.5 && ha < -1.0) vColor = vec3(0.85, 0.30, 0.75);
-        }
-      }
-    }
-
-    if (uColorMode > 0.5 && uColorMode < 1.5) {
+    if (${estMode('hauteur')}) {
       vec2 uv = (position.xy - uTerrainMin) / uTerrainSize;
       // Hors de la grille, l'echantillonnage rendrait le bord sans rien dire :
       // on le detecte explicitement plutot que de peindre une hauteur inventee.
@@ -348,12 +335,12 @@ export class PointsMaterialPool {
 
   /**
    * Choisit la source de couleur. Les modes qui reposent sur le terrain
-   * (hauteur, audit) restent inactifs tant qu'il n'est pas pret : mieux vaut la
+   * (hauteur) reste inactif tant qu'il n'est pas pret : mieux vaut la
    * couleur de classe qu'un gris uniforme sans explication.
    */
   setColorMode(mode) {
     const code = COLOR_MODES[mode] ?? COLOR_MODES.classe;
-    const besoinTerrain = code === COLOR_MODES.hauteur || code === COLOR_MODES.audit;
+    const besoinTerrain = code === COLOR_MODES.hauteur;
     if (besoinTerrain && !this.terrainTexture) {
       this.shared.uColorMode = COLOR_MODES.classe;
     } else {

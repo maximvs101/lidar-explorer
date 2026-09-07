@@ -112,6 +112,12 @@
                 background: var(--panel); margin: 10px 0; font-size: 12px; display: none; }
       #notice.show { display: block; }
       #notice.miss { border-color: #6b4a2a; background: #22190f; }
+      .src { margin: 7px 0 9px; }
+      .src-t { font-size: 12px; color: var(--text); }
+      .src-d { font-size: 11px; color: var(--dim); line-height: 1.4; }
+      .src-u, .src-l { font-size: 10px; color: var(--dim); word-break: break-all; opacity: .8; }
+      .src-l::before { content: "↳ "; }
+      #sources a { color: var(--accent); }
       .leaflet-container { font: inherit; background: #10141a; }
       .leaflet-control-attribution { font-size: 10px !important; }
     </style>
@@ -178,7 +184,6 @@
           <option value="retours">nombre de retours</option>
           <option value="bande">bande de vol</option>
           <option value="hauteur">hauteur au sol</option>
-          <option value="audit">audit</option>
         </select>
       </label>
       <label id="roundrow">
@@ -206,6 +211,9 @@
 
       <h2>Compteurs</h2>
       <div id="stats"><span class="dim">—</span></div>
+
+      <h2>Sources</h2>
+      <div id="sources"></div>
 
       <p class="foot" style="margin-top:14px">
         <button id="clear">Vider le cache</button>

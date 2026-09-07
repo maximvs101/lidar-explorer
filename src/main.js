@@ -10,6 +10,7 @@ import { COLOR_MODES } from './render/pointsMaterial.js';
 import { formatDistance, formatSlope, measureBetween, toAbsolute } from './analysis/measure.js';
 import { className, shares } from './analysis/classStats.js';
 import { cardinal, chooseScale, formatLength, pixelsPerMetre, viewAzimuth } from './ui/scale.js';
+import { renderSources } from './ui/sources.js';
 
 const CONCURRENCY = 4;
 const POINT_BUDGET = 4_000_000;
@@ -24,6 +25,7 @@ const el = {
   tile: document.getElementById('tile'),
   checks: document.getElementById('checks'),
   stats: document.getElementById('stats'),
+  sources: document.getElementById('sources'),
   hud: document.getElementById('hud'),
   legend: document.getElementById('legend'),
   presets: document.getElementById('presets'),
@@ -605,12 +607,14 @@ el.detail.addEventListener('input', () => {
 // Le choix est donc devenu esthétique, et il revient à qui regarde.
 el.colorMode.addEventListener('change', () => {
   const mode = el.colorMode.value;
-  if (mode === 'hauteur' || mode === 'audit') viewer.buildTerrain({ force: true });
+  if (mode === 'hauteur') {
+    viewer.buildTerrain({ force: true });
+    viewer.loadRaster('mnh');
+  }
   viewer.materials.setColorMode(mode);
-  if (mode === 'audit') viewer.runAudit({ force: true });
   if (mode === 'intensite') viewer.autoIntensityRange();
-  // Le mode retenu peut différer du mode demandé : hauteur et audit exigent un
-  // terrain, et sans lui le rendu retombe sur la couleur de classe.
+  // Le mode retenu peut différer du mode demandé : la hauteur exige un terrain,
+  // et sans lui le rendu retombe sur la couleur de classe.
   el.colorMode.value = Object.keys(COLOR_MODES)
     .find((k) => COLOR_MODES[k] === viewer.materials.shared.uColorMode) ?? 'classe';
   renderLegend();
@@ -737,25 +741,6 @@ function sourceTerrain() {
   }
 }
 
-/**
- * Part d'une famille de classes au-dessus du MNS.
- *
- * Le compte brut ne dit rien — mille points sur dix millions ne pèsent pas
- * comme sur vingt mille — et une famille absente de la zone chargée n'a pas de
- * part du tout, ce qui n'est pas zéro.
- */
-function part(surface, cle) {
-  const f = surface?.familles?.[cle];
-  return f && f.testes > 0 ? (100 * f.dessus) / f.testes : NaN;
-}
-
-function partFamille(surface, cle) {
-  const v = part(surface, cle);
-  if (!Number.isFinite(v)) return '—';
-  const f = surface.familles[cle];
-  return `${v.toFixed(2)} % de ${fmt(f.testes)}`;
-}
-
 /** État d'un raster secondaire, en une ligne de tableau. */
 function etatRaster(produit) {
   switch (viewer.rasterStatus(produit)) {
@@ -814,44 +799,6 @@ setInterval(() => {
       ['— p99', ref && Number.isFinite(ref.p99) ? `${ref.p99.toFixed(1)} m` : '—'],
       ['— maximum', ref && Number.isFinite(ref.max) ? `${ref.max.toFixed(1)} m` : '—'],
     ]);
-  }
-
-  // Audit : des parts, pas des comptes bruts — mille points douteux sur dix
-  // millions ne pèsent pas comme sur vingt mille. Et « rien à redire » n'est
-  // pas « vérifié » : seul ce que le sol connu permet de juger est compté.
-  if (session && viewer.colorMode === 'audit') {
-    const a = viewer.auditStats;
-    const etatMns = etatRaster('mns');
-    const pct = (v) => (Number.isFinite(v) ? `${v.toFixed(2)} %` : '—');
-    const m = (v) => (Number.isFinite(v) ? `${v.toFixed(2)} m` : '—');
-    const srcAudit = sourceTerrain();
-    table(el.stats, a ? [
-      ['source du sol', srcAudit.libelle, srcAudit.warn ? 'warn' : ''],
-      ['points jugeables', fmt(a.testes)],
-      ['— sol inconnu, non jugés', fmt(a.sansSol), a.sansSol > 0 ? 'warn' : ''],
-      ['végétation haute au sol', `${fmt(a.vegetation.count)} · ${pct(a.vegetation.share)}`,
-        a.vegetation.share > 1 ? 'warn' : ''],
-      ['bâtiment sous le terrain', `${fmt(a.batiment.count)} · ${pct(a.batiment.share)}`,
-        a.batiment.share > 1 ? 'warn' : ''],
-      ['mailles d’eau jugeables', fmt(a.eau.retenues ?? 0)],
-      ['— non horizontales', `${fmt(a.eau.suspectes ?? 0)} · ${pct(100 * (a.eau.ratio ?? NaN))}`,
-        a.eau.ratio > 0.1 ? 'err' : ''],
-      ['étendue max de l’eau', m(a.eau.etendueMax), a.eau.etendueMax > 0.5 ? 'err' : ''],
-      ['— seuil admis', m(a.eau.seuil)],
-      // Ce qui dépasse le MNS officiel. Le MNS est une grille : il ne tient
-      // ni câble, ni branche, ni antenne — un dépassement n'est donc pas une
-      // faute, c'est ce que le raster ne sait pas représenter. Seule la
-      // comparaison entre familles est lisible, et le sol sert de témoin :
-      // il ne dépasse jamais une surface correctement calée.
-      ['au-dessus du MNS', a.surface
-        ? `${fmt(a.surface.dessus)} · ${pct(100 * a.surface.dessus / Math.max(a.surface.testes, 1))}`
-        : etatMns.libelle, !a.surface && etatMns.warn ? 'warn' : ''],
-      ['— sol et eau (témoin)', partFamille(a.surface, 'sol'),
-        a.surface && part(a.surface, 'sol') > 1 ? 'err' : ''],
-      ['— non classés', partFamille(a.surface, 'nonClasse')],
-      ['— sursol pérenne', partFamille(a.surface, 'sursol')],
-      ['— dépassement max', a.surface && a.surface.dessus > 0 ? m(a.surface.ecartMax) : '—'],
-    ] : [['audit', 'en cours…']]);
   }
 
   el.hud.innerHTML = session
@@ -916,4 +863,9 @@ window.__index = index;
 window.__pick = pick;
 window.__loadSelected = loadSelected;
 window.__loader = () => loader;
+// La déclaration des sources est écrite une fois, au démarrage : elle ne
+// dépend d'aucun état de la session, et rien de ce qu'elle nomme ne change
+// en cours de route.
+renderSources(el.sources);
+
 log('prêt — cliquez sur la carte.');

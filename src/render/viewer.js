@@ -1,14 +1,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { diffSelection, selectAcross } from '../lod/selector.js';
-import { PointsMaterialPool } from './pointsMaterial.js';
+import { COLOR_MODES, PointsMaterialPool } from './pointsMaterial.js';
 import { PRESETS, getPreset } from './presets.js';
 import { ReliefRenderer } from './relief.js';
 import { ScenePicker } from './picker.js';
 import { histogram } from '../analysis/classStats.js';
 import { TerrainGrid, heightStats } from '../analysis/terrain.js';
 import { fetchRaster } from '../analysis/rasters.js';
-import { WaterPlanarity, classContradictions, summarise, surfaceExcess } from '../analysis/audit.js';
 
 /**
  * Rendu du nuage avec niveau de détail piloté par la caméra.
@@ -61,7 +60,7 @@ export class Viewer {
     // le comblement des trous parcourant la grille entiere a chaque passe.
     this.groundGrid = null;
     // Les trois rasters derives, charges a la demande : le MNT des l'ouverture
-    // (tout en depend), le MNH et le MNS seulement quand un mode s'en sert.
+    // (tout en depend), le MNH seulement quand le mode canopee s'en sert.
     // Chacun pese 4 Mo, les demander tous d'office serait payer pour rien.
     this.rasters = new Map(); // produit -> RasterGrid
     this.rasterState = new Map(); // produit -> idle | chargement | officiel | absent | erreur
@@ -73,8 +72,6 @@ export class Viewer {
     this.terrainStats = null;
     this._terrainBuiltAt = 0;
     this._publishedTerrain = null;
-    this.auditStats = null;
-    this._auditAt = 0;
     this.preset = getPreset('lecture');
     this.presetName = 'lecture';
     this.colorMode = this.preset.colorMode ?? 'classe';
@@ -243,7 +240,7 @@ export class Viewer {
    * Source de terrain effectivement en service.
    *
    * Le MNT des qu'il est la, la grille calculee sinon. Tout le reste — rendu,
-   * audit, canopee, mesure — passe par ici sans savoir laquelle repond.
+   * canopee, mesure — passe par ici sans savoir laquelle repond.
    */
   get terrain() {
     return this.mnt ?? this.groundGrid;
@@ -396,37 +393,6 @@ export class Viewer {
   }
 
   /**
-   * Passe d'audit sur tout ce qui est en scene.
-   *
-   * Le parcours est en O(points) : quelques millions de points a chaque appel,
-   * donc un intervalle minimal, et seulement quand le mode est actif.
-   */
-  runAudit({ minInterval = 2500, force = false } = {}) {
-    if (!this.terrain || !this.terrain.filled) return null;
-    const maintenant = performance.now();
-    if (!force && maintenant - this._auditAt < minInterval) return this.auditStats;
-
-    const contradictions = {
-      vegetationTropBasse: 0, batimentSousSol: 0, solEnLair: 0, testes: 0, sansSol: 0,
-    };
-    const eau = new WaterPlanarity({ cell: 20 });
-    // Le quatrieme controle n'a lieu que si le MNS a repondu : sans surface de
-    // reference, ne rien dire vaut mieux que dire « aucun depassement ».
-    const mns = this.rasters.get('mns');
-    let dessus = null;
-    for (const points of this.loaded.values()) {
-      const pos = points.geometry.getAttribute('position').array;
-      const cls = points.geometry.getAttribute('classification').array;
-      classContradictions(this.terrain, pos, cls, contradictions);
-      eau.addPoints(pos, cls);
-      if (mns) dessus = surfaceExcess(mns, pos, cls, dessus);
-    }
-    this._auditAt = maintenant;
-    this.auditStats = { ...summarise(contradictions, eau.report()), surface: dessus };
-    return this.auditStats;
-  }
-
-  /**
    * Regle les bornes d'intensite sur les centiles de ce qui est charge.
    *
    * Une plage fixe ne vaudrait que pour la zone ou elle a ete mesuree : la
@@ -517,20 +483,16 @@ export class Viewer {
     // La source de couleur appliquee, retenue sous un nom stable : c'est elle
     // que l'interface interroge pour savoir quel panneau afficher. L'avoir
     // laissee deduire des champs du preset a deja coute cher — les champs
-    // `heightMode` et `auditMode` ont disparu des presets, et les deux panneaux
+    // `heightMode` et `auditMode` ont disparu des presets, et les panneaux
     // qui les testaient ont cesse de s'afficher sans que rien ne le signale.
     this.colorMode = mode;
     this.materials.setHeightScale(preset.heightMax ?? 30);
-    if (mode === 'hauteur' || mode === 'audit') this.buildTerrain({ force: true });
+    if (mode === 'hauteur') this.buildTerrain({ force: true });
     this.materials.setColorMode(mode);
-    // Chaque mode ne reclame que le raster dont il se sert : le MNH decrit la
-    // canopee sur toute l'emprise, le MNS sert de plafond a l'audit. L'appel
-    // est idempotent, et rend la main sans attendre les 4 Mo.
+    // Le seul mode qui reclame un raster de plus : le MNH, qui decrit la
+    // canopee sur toute l'emprise. L'appel est idempotent, et rend la main sans
+    // attendre les 4 Mo.
     if (mode === 'hauteur') this.loadRaster('mnh');
-    if (mode === 'audit') {
-      this.loadRaster('mns').then(() => this.runAudit({ force: true }));
-      this.runAudit({ force: true });
-    }
     if (mode === 'intensite') this.autoIntensityRange();
 
   }
@@ -729,7 +691,6 @@ export class Viewer {
     this.rasterError.clear();
     this._publishedTerrain = null;
     this.terrainStats = null;
-    this.auditStats = null;
     this.materials.setTerrain(null);
     for (const id of [...this.loaded.keys()]) this.removeNode(id);
     this.pending.clear();
@@ -779,12 +740,10 @@ export class Viewer {
   refresh({ maxRequests = 4 } = {}) {
     // Le terrain se refige quand de nouveaux points de sol sont arrives ; la
     // methode porte son propre intervalle minimal, l'appeler a chaque image ne
-    // coute donc rien la plupart du temps.
-    // Les deux modes qui reposent sur le terrain le maintiennent a jour ;
-    // buildTerrain et runAudit portent chacun leur intervalle minimal.
-    const modeCourant = this.materials.shared.uColorMode;
-    if (modeCourant === 1 || modeCourant === 2) this.buildTerrain();
-    if (modeCourant === 2) this.runAudit();
+    // coute donc rien la plupart du temps. Le code du mode vient de la table,
+    // jamais d'un nombre ecrit ici : c'est ce qui permet d'en retirer un sans
+    // decaler silencieusement les autres.
+    if (this.materials.shared.uColorMode === COLOR_MODES.hauteur) this.buildTerrain();
 
     const selection = this.select();
     if (!selection) return null;
