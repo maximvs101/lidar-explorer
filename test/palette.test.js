@@ -263,3 +263,82 @@ describe('mode hauteur et terrain', () => {
     expect(pool.shared.uColorMode).toBe(COLOR_MODES.classe);
   });
 });
+
+describe('filtres de rendu', () => {
+  const terrainPlat = () => ({
+    cells: 2, size: 100, minX: -50, minY: -50,
+    height: new Float32Array([10, 10, 10, 10]),
+    known: new Uint8Array([1, 1, 1, 1]),
+  });
+
+  it('refuse le filtre de hauteur sans terrain publié', () => {
+    // Sans terrain, le filtre écarterait tout : une scène vide sans explication
+    // ressemble à une panne. On refuse, et l'appelant l'apprend par le retour.
+    const pool = new PointsMaterialPool();
+    expect(pool.setHeightFilter(2, 5)).toBe(false);
+    expect(pool.shared.uHeightFilter).toBe(0);
+  });
+
+  it('l’accepte dès qu’un terrain est là, et le rend au retrait du terrain', () => {
+    const pool = new PointsMaterialPool();
+    pool.setTerrain(terrainPlat());
+    expect(pool.setHeightFilter(2, 5)).toBe(true);
+    expect(pool.shared.uHeightFilter).toBe(1);
+    expect(pool.shared.uHeightRange).toEqual([2, 5]);
+
+    pool.setTerrain(null);
+    expect(pool.setHeightFilter(2, 5)).toBe(false);
+  });
+
+  it('remet les bornes dans l’ordre plutôt que de ne rien montrer', () => {
+    const pool = new PointsMaterialPool();
+    pool.setTerrain(terrainPlat());
+    pool.setHeightFilter(9, 3);
+    expect(pool.shared.uHeightRange).toEqual([3, 9]);
+  });
+
+  it('s’éteint sans toucher aux bornes retenues', () => {
+    const pool = new PointsMaterialPool();
+    pool.setTerrain(terrainPlat());
+    pool.setHeightFilter(2, 5);
+    expect(pool.setHeightFilter(2, 5, false)).toBe(false);
+    expect(pool.shared.uHeightFilter).toBe(0);
+    expect(pool.shared.uHeightRange).toEqual([2, 5]);
+  });
+
+  it('refuse une borne non finie', () => {
+    const pool = new PointsMaterialPool();
+    pool.setTerrain(terrainPlat());
+    expect(pool.setHeightFilter(NaN, 5)).toBe(false);
+    expect(pool.setHeightFilter(2, Infinity)).toBe(false);
+  });
+
+  it('la coupe s’éteint par une largeur nulle, pas par un interrupteur de plus', () => {
+    const pool = new PointsMaterialPool();
+    expect(pool.setSection([0, 0], [10, 0], 4)).toBe(true);
+    expect(pool.shared.uSection).toEqual([0, 0, 10, 0]);
+    expect(pool.shared.uSectionWidth).toBe(4);
+
+    expect(pool.setSection([0, 0], [10, 0], 0)).toBe(false);
+    expect(pool.shared.uSectionWidth).toBe(0);
+    // Le segment retenu ne bouge pas : rallumer ne demande pas de le repasser.
+    expect(pool.shared.uSection).toEqual([0, 0, 10, 0]);
+  });
+
+  it('la coupe refuse un segment absent ou une largeur absurde', () => {
+    const pool = new PointsMaterialPool();
+    expect(pool.setSection(null, [1, 1], 5)).toBe(false);
+    expect(pool.setSection([0, 0], null, 5)).toBe(false);
+    expect(pool.setSection([0, 0], [1, 1], -3)).toBe(false);
+    expect(pool.setSection([0, 0], [1, 1], NaN)).toBe(false);
+  });
+
+  it('le shader porte les deux filtres, et un seul rejet en sortie', () => {
+    const glsl = new PointsMaterialPool().forSize(1).vertexShader;
+    expect(glsl).toContain('uHeightFilter > 0.5');
+    expect(glsl).toContain('uSectionWidth > 0.0');
+    // Un point écarté est renvoyé hors du volume de vue, une seule fois : deux
+    // écritures concurrentes de gl_Position se masqueraient l'une l'autre.
+    expect(glsl.match(/gl_Position = vec4\(2\.0/g)).toHaveLength(1);
+  });
+});

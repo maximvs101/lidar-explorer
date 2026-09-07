@@ -89,6 +89,10 @@ const VERTEX = /* glsl */ `
   uniform float uHeightMax;
   uniform float uColorMode;
   uniform vec2 uIntensityRange;
+  uniform vec2 uHeightRange;
+  uniform float uHeightFilter;
+  uniform vec4 uSection;
+  uniform float uSectionWidth;
   varying vec3 vColor;
 
   // Rampe de hauteur : du sol nu aux emergents. Le brun de depart evite de
@@ -160,12 +164,40 @@ const VERTEX = /* glsl */ `
         }
       }
     }
+    // --- Filtres. Un point ecarte est renvoye hors du volume de vue : rien
+    // n'est rasterise, ce qui coute moins qu'un discard au fragment.
+    bool garde = entry.a >= 0.5;
+
+    // Hauteur au-dessus du sol. La ou le terrain est inconnu, le point est
+    // ecarte : le filtre garde ce qu'il peut prouver dans la plage, il ne
+    // laisse pas passer ce qu'il ne sait pas juger.
+    if (garde && uHeightFilter > 0.5) {
+      vec2 uvh = (position.xy - uTerrainMin) / uTerrainSize;
+      if (uvh.x < 0.0 || uvh.x > 1.0 || uvh.y < 0.0 || uvh.y > 1.0) garde = false;
+      else {
+        float solF = texture2D(uTerrain, uvh).r;
+        if (solF < -9000.0) garde = false;
+        else {
+          float hf = position.z - solF;
+          if (hf < uHeightRange.x || hf > uHeightRange.y) garde = false;
+        }
+      }
+    }
+
+    // Coupe : bande de largeur uSectionWidth autour du segment, en plan.
+    // La projection est bornee au segment, donc la bande a des bouts arrondis
+    // plutot que de s'etendre a l'infini le long de la droite porteuse.
+    if (garde && uSectionWidth > 0.0) {
+      vec2 pa = position.xy - uSection.xy;
+      vec2 ba = uSection.zw - uSection.xy;
+      float t = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+      if (length(pa - ba * t) > uSectionWidth * 0.5) garde = false;
+    }
+
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mv;
     gl_PointSize = uAttenuate > 0.5 ? max(1.0, uBoost * uSize * uScale / max(-mv.z, 0.001)) : uSize * uBoost;
-    // Une classe masquée est renvoyée hors du volume de vue : rien n'est
-    // rasterisé, ce qui coûte moins qu'un discard au fragment.
-    if (entry.a < 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    if (!garde) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   }
 `;
 
@@ -196,6 +228,13 @@ export class PointsMaterialPool {
       uScale: 1, uAttenuate: attenuate ? 1 : 0, uRound: round ? 1 : 0, uBoost: 1,
       uHeightMax: 30, uColorMode: 0,
       uIntensityRange: [200, 1450],
+      // Plage de hauteur au-dessus du sol, et bande de coupe. Toutes deux
+      // inertes tant qu'on ne les allume pas : une largeur nulle ne coupe rien,
+      // et le filtre de hauteur porte son propre interrupteur parce qu'une
+      // plage « de 0 a l'infini » resterait un filtre actif, qui ecarterait les
+      // points sans sol connu.
+      uHeightRange: [0, 60], uHeightFilter: 0,
+      uSection: [0, 0, 0, 0], uSectionWidth: 0,
     };
   }
 
@@ -255,6 +294,10 @@ export class PointsMaterialPool {
         uHeightMax: { value: this.shared.uHeightMax },
         uColorMode: { value: this.shared.uColorMode },
         uIntensityRange: { value: new THREE.Vector2(...this.shared.uIntensityRange) },
+        uHeightRange: { value: new THREE.Vector2(...this.shared.uHeightRange) },
+        uHeightFilter: { value: this.shared.uHeightFilter },
+        uSection: { value: new THREE.Vector4(...this.shared.uSection) },
+        uSectionWidth: { value: this.shared.uSectionWidth },
       },
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
@@ -327,6 +370,36 @@ export class PointsMaterialPool {
     }
   }
 
+  /**
+   * Ne montre que ce qui se tient entre deux hauteurs au-dessus du sol.
+   *
+   * Sans terrain publie, le filtre ecarterait tout : on refuse alors de
+   * l'activer plutot que de vider la scene sans explication. L'appelant lit la
+   * valeur rendue pour savoir ce qui s'est reellement passe.
+   */
+  setHeightFilter(min, max, active = true) {
+    const possible = active && Boolean(this.terrainTexture)
+      && Number.isFinite(min) && Number.isFinite(max);
+    this.shared.uHeightFilter = possible ? 1 : 0;
+    if (possible) this.shared.uHeightRange = [Math.min(min, max), Math.max(min, max)];
+    this._pushShared();
+    return this.shared.uHeightFilter === 1;
+  }
+
+  /**
+   * Ne montre qu'une bande autour d'un segment, en plan.
+   *
+   * Une largeur nulle ou negative eteint la coupe : c'est le seul etat qui
+   * n'ecarte rien, et il vaut mieux qu'un interrupteur de plus.
+   */
+  setSection(a, b, width) {
+    const actif = Boolean(a) && Boolean(b) && Number.isFinite(width) && width > 0;
+    this.shared.uSectionWidth = actif ? width : 0;
+    if (actif) this.shared.uSection = [a[0], a[1], b[0], b[1]];
+    this._pushShared();
+    return this.shared.uSectionWidth > 0;
+  }
+
   /** Borne haute de la rampe de hauteur, en metres. Le mode vient de setColorMode. */
   setHeightScale(maxHeight) {
     this.shared.uHeightMax = maxHeight;
@@ -366,6 +439,12 @@ export class PointsMaterialPool {
       material.uniforms.uIntensityRange.value.set(
         this.shared.uIntensityRange[0], this.shared.uIntensityRange[1],
       );
+      material.uniforms.uHeightRange.value.set(
+        this.shared.uHeightRange[0], this.shared.uHeightRange[1],
+      );
+      material.uniforms.uHeightFilter.value = this.shared.uHeightFilter;
+      material.uniforms.uSection.value.set(...this.shared.uSection);
+      material.uniforms.uSectionWidth.value = this.shared.uSectionWidth;
       if (this.terrainTexture) {
         material.uniforms.uTerrain.value = this.terrainTexture;
         material.uniforms.uTerrainMin.value.set(this.terrainMin[0], this.terrainMin[1]);

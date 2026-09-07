@@ -61,6 +61,14 @@
       #colorrow select { flex: 1; background: var(--panel); color: var(--text);
                          border: 1px solid var(--line); border-radius: 4px;
                          padding: 3px 5px; font: inherit; }
+      #hfilterrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+                    margin: 2px 0 4px; font-size: 11px; color: var(--dim);
+                    cursor: pointer; user-select: none; }
+      #hfilterrow input[type=number] { width: 4.4em; background: var(--panel); color: var(--text);
+                    border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px;
+                    font: inherit; font-variant-numeric: tabular-nums; }
+      #hfilterrow input[type=checkbox] { margin: 0; cursor: pointer; accent-color: var(--accent); }
+      #hfilterhint { margin: 0 0 8px; }
       #roundrow, #neighbourrow { display: flex; align-items: center; gap: 7px;
                   margin: 2px 0 6px; font-size: 11px; color: var(--dim);
                   cursor: pointer; user-select: none; }
@@ -190,6 +198,19 @@
         <div id="legend"><span class="dim">—</span></div>
         <p id="biais" class="foot"></p>
 
+        <div class="sublabel">hauteur au-dessus du sol</div>
+        <label id="hfilterrow">
+          <input id="hfilter" type="checkbox">
+          <span>ne garder que de</span>
+          <input id="hmin" type="number" value="2" step="0.5" min="-5" max="80">
+          <span>à</span>
+          <input id="hmax" type="number" value="5" step="0.5" min="-5" max="80">
+          <span>m</span>
+        </label>
+        <p class="foot" id="hfilterhint">Isoler une strate : 0 à 0,5 m pour le sol nu, 2 à 5 m
+          pour les sous-bois, au-delà de 20 m pour les émergents. Les points dont le sol est
+          inconnu sont écartés — le filtre garde ce qu'il peut prouver dans la plage.</p>
+
         <details id="finesse" class="pliant" style="margin-top:10px">
           <summary>Réglages fins</summary>
           <label id="sizerow">
@@ -229,6 +250,10 @@
           <span id="measureactions" hidden><button id="measureclear">Effacer</button></span>
         </p>
         <div id="measureout"><span class="dim">—</span></div>
+        <p class="foot">Pour inspecter, pas pour arpenter. On ne vise pas un objet mais le
+          point affiché le plus proche : l'espacement du niveau de détail courant pèse
+          souvent plus que les 50 cm de planimétrie et 10 cm d'altimétrie annoncés par
+          l'IGN. S'approcher charge un niveau plus fin et resserre l'incertitude.</p>
       </section>
 
       <section class="phase">

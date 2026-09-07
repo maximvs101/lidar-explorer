@@ -50,6 +50,45 @@ export function measureBetween(a, b) {
 }
 
 /**
+ * Exactitude annoncée du LiDAR HD, en mètres.
+ *
+ * Ce sont les chiffres du producteur, pas les nôtres : 10 cm en altimétrie,
+ * 50 cm en planimétrie. Ils décrivent la position d'un point du nuage, et non
+ * la position de l'objet qu'on croit viser.
+ */
+export const LIDAR_HD_PRECISION = { altimetrie: 0.1, planimetrie: 0.5 };
+
+/**
+ * Ce que vaut une mesure faite dans la scène.
+ *
+ * Deux termes s'ajoutent, et le second est souvent le plus grand :
+ *
+ * 1. L'exactitude du nuage lui-même, celle du producteur.
+ * 2. **L'échantillonnage.** On ne vise pas un objet, on vise le point affiché le
+ *    plus proche. Au niveau de détail courant, les points sont espacés de
+ *    `spacing` mètres ; l'arête réelle peut donc se trouver jusqu'à la moitié de
+ *    cet espacement à côté. À 3 m d'espacement, ce terme pèse trois fois
+ *    l'exactitude planimétrique annoncée.
+ *
+ * Les deux termes sont indépendants, d'où la somme quadratique. Et la distance
+ * entre deux points cumule l'incertitude des deux, d'où le facteur √2.
+ *
+ * L'altimétrie ne subit pas l'échantillonnage de la même façon : le point visé
+ * porte sa propre altitude, mesurée, pas interpolée entre voisins.
+ */
+export function measurementUncertainty(spacing) {
+  const echantillon = Number.isFinite(spacing) && spacing > 0 ? spacing / 2 : 0;
+  const plan = Math.hypot(LIDAR_HD_PRECISION.planimetrie, echantillon);
+  return {
+    spacing: Number.isFinite(spacing) && spacing > 0 ? spacing : NaN,
+    horizontalPoint: plan,
+    verticalPoint: LIDAR_HD_PRECISION.altimetrie,
+    horizontalDistance: plan * Math.SQRT2,
+    verticalDistance: LIDAR_HD_PRECISION.altimetrie * Math.SQRT2,
+  };
+}
+
+/**
  * Formate une longueur avec une précision qui ne ment pas.
  *
  * Le LiDAR HD est donné pour une dizaine de centimètres en altimétrie ; afficher

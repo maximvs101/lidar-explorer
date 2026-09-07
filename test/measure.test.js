@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatDistance, formatSlope, measureBetween, toAbsolute } from '../src/analysis/measure.js';
+import {
+  LIDAR_HD_PRECISION,
+  formatDistance,
+  formatSlope,
+  measureBetween,
+  measurementUncertainty,
+  toAbsolute,
+} from '../src/analysis/measure.js';
 import { unpackDepth } from '../src/render/picker.js';
 
 describe('coordonnées absolues', () => {
@@ -99,5 +106,47 @@ describe('dépaquetage de la profondeur', () => {
     expect(unpackDepth(128, 0, 0, 0)).toBeCloseTo(0.5, 6);
     // Et un pas sur le rouge pèse bien plus qu'un pas sur l'alpha.
     expect(unpackDepth(1, 0, 0, 0)).toBeGreaterThan(unpackDepth(0, 0, 0, 255) * 1000);
+  });
+});
+
+describe('ce que vaut une mesure', () => {
+  it('ajoute l’échantillonnage à l’exactitude annoncée', () => {
+    // Les deux termes sont indépendants : somme quadratique, pas addition.
+    // À 3 m d'espacement, l'échantillonnage (1,5 m) pèse trois fois les 50 cm
+    // de planimétrie — c'est lui qui décide, et c'est ce qu'il faut montrer.
+    const u = measurementUncertainty(3);
+    expect(u.horizontalPoint).toBeCloseTo(Math.hypot(0.5, 1.5), 6);
+    expect(u.horizontalPoint).toBeGreaterThan(LIDAR_HD_PRECISION.planimetrie);
+    expect(u.verticalPoint).toBe(LIDAR_HD_PRECISION.altimetrie);
+  });
+
+  it('cumule l’incertitude des deux extrémités d’une distance', () => {
+    const u = measurementUncertainty(3);
+    expect(u.horizontalDistance).toBeCloseTo(u.horizontalPoint * Math.SQRT2, 6);
+    expect(u.verticalDistance).toBeCloseTo(u.verticalPoint * Math.SQRT2, 6);
+    expect(u.horizontalDistance).toBeGreaterThan(u.horizontalPoint);
+  });
+
+  it('retombe sur la seule exactitude annoncée sans espacement connu', () => {
+    // Sans niveau de détail identifiable, on n'invente pas un terme : on donne
+    // le plancher, et `spacing` reste NaN pour que l'interface le dise.
+    for (const absent of [NaN, 0, -1, undefined]) {
+      const u = measurementUncertainty(absent);
+      expect(Number.isNaN(u.spacing), String(absent)).toBe(true);
+      expect(u.horizontalPoint).toBeCloseTo(LIDAR_HD_PRECISION.planimetrie, 6);
+    }
+  });
+
+  it('grandit avec l’espacement, sans jamais descendre sous le plancher', () => {
+    const suite = [0.5, 1, 2, 4, 8].map((s) => measurementUncertainty(s).horizontalPoint);
+    for (let i = 1; i < suite.length; i += 1) expect(suite[i]).toBeGreaterThan(suite[i - 1]);
+    expect(suite[0]).toBeGreaterThanOrEqual(LIDAR_HD_PRECISION.planimetrie);
+  });
+
+  it('reste sous le mètre au pas natif du LiDAR HD', () => {
+    // 10 pts/m² annoncés, soit ~30 cm d'espacement au niveau le plus fin :
+    // l'incertitude en plan doit alors être dominée par les 50 cm du producteur.
+    const u = measurementUncertainty(0.32);
+    expect(u.horizontalPoint).toBeLessThan(0.6);
   });
 });

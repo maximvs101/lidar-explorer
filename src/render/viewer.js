@@ -72,6 +72,7 @@ export class Viewer {
     this.terrainStats = null;
     this._terrainBuiltAt = 0;
     this._publishedTerrain = null;
+    this.heightFilter = null;
     this.preset = getPreset('lecture');
     this.presetName = 'lecture';
     this.colorMode = this.preset.colorMode ?? 'classe';
@@ -514,6 +515,49 @@ export class Viewer {
   }
 
   /**
+   * Ne montre que ce qui se tient entre deux hauteurs au-dessus du sol.
+   *
+   * Le terrain doit etre publie avant, sinon le filtre n'aurait rien contre
+   * quoi mesurer : le mode couleur par hauteur le publiait deja, mais le filtre
+   * s'utilise dans n'importe quel mode. Rend faux quand il n'a pas pu prendre.
+   */
+  setHeightFilter(min, max, active = true) {
+    if (active) this.buildTerrain({ force: true });
+    this.heightFilter = active ? { min, max } : null;
+    const pris = this.materials.setHeightFilter(min, max, active);
+    if (!pris) this.heightFilter = null;
+    return pris;
+  }
+
+  /**
+   * Espacement des points au niveau reellement affiche a cet endroit.
+   *
+   * C'est le terme qui domine l'incertitude d'une mesure : on ne vise pas un
+   * objet, on vise le point affiche le plus proche. Les niveaux de l'octree se
+   * recouvrent dans l'espace, donc plusieurs noeuds peuvent contenir le point ;
+   * le plus fin l'emporte, puisque c'est celui dont les points sont les plus
+   * susceptibles d'etre ceux qu'on a vus.
+   *
+   * Rend NaN quand rien ne couvre l'endroit, plutot qu'une valeur de repli qui
+   * ferait passer une incertitude inconnue pour une petite incertitude.
+   */
+  spacingAt(point) {
+    let meilleur = NaN;
+    for (const [uid, points] of this.loaded) {
+      const geometry = points.geometry;
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      if (!geometry.boundingBox.containsPoint(point)) continue;
+      const [tileKey, nodeId] = uid.split('|');
+      const entry = this.tiles.get(tileKey);
+      if (!entry) continue;
+      const niveau = Number(nodeId.split('-')[0]);
+      const espacement = entry.tile.header.spacing / 2 ** niveau;
+      if (Number.isNaN(meilleur) || espacement < meilleur) meilleur = espacement;
+    }
+    return meilleur;
+  }
+
+  /**
    * Position 3D sous un point de l'ecran, en coordonnees de scene.
    *
    * Les coordonnees arrivent en pixels CSS ; le tampon de rendu peut avoir une
@@ -743,7 +787,8 @@ export class Viewer {
     // coute donc rien la plupart du temps. Le code du mode vient de la table,
     // jamais d'un nombre ecrit ici : c'est ce qui permet d'en retirer un sans
     // decaler silencieusement les autres.
-    if (this.materials.shared.uColorMode === COLOR_MODES.hauteur) this.buildTerrain();
+    if (this.materials.shared.uColorMode === COLOR_MODES.hauteur
+      || this.materials.shared.uHeightFilter === 1) this.buildTerrain();
 
     const selection = this.select();
     if (!selection) return null;

@@ -7,7 +7,8 @@ import { LocationPicker } from './ui/map.js';
 import { Viewer } from './render/viewer.js';
 import { PRESETS, PRESET_NAMES } from './render/presets.js';
 import { COLOR_MODES } from './render/pointsMaterial.js';
-import { formatDistance, formatSlope, measureBetween, toAbsolute } from './analysis/measure.js';
+import { formatDistance, formatSlope, measureBetween, measurementUncertainty, toAbsolute }
+  from './analysis/measure.js';
 import { className, shares } from './analysis/classStats.js';
 import { cardinal, chooseScale, formatLength, pixelsPerMetre, viewAzimuth } from './ui/scale.js';
 import { renderSources } from './ui/sources.js';
@@ -40,6 +41,10 @@ const el = {
   colorMode: document.getElementById('colormode'),
   round: document.getElementById('round'),
   neighbours: document.getElementById('neighbours'),
+  hFilter: document.getElementById('hfilter'),
+  hMin: document.getElementById('hmin'),
+  hMax: document.getElementById('hmax'),
+  hFilterHint: document.getElementById('hfilterhint'),
   detail: document.getElementById('detail'),
   detailVal: document.getElementById('detailval'),
   measureBtn: document.getElementById('measure'),
@@ -479,13 +484,30 @@ function setMeasuring(on) {
   }
 }
 
+/**
+ * Ce que vaut la mesure affichée, en clair.
+ *
+ * L'espacement retenu est le plus grossier des deux points visés : une mesure
+ * ne vaut pas mieux que son extrémité la moins bien échantillonnée. Il vient du
+ * niveau de détail réellement affiché à cet endroit, donc il change quand on
+ * s'approche — ce qui est précisément ce qu'il faut montrer.
+ */
+function incertitudeCourante() {
+  const espacements = picks.map((p) => viewer.spacingAt(p)).filter(Number.isFinite);
+  if (espacements.length < picks.length || espacements.length === 0) return measurementUncertainty(NaN);
+  return measurementUncertainty(Math.max(...espacements));
+}
+
 function renderMeasure() {
   const origine = viewer.sceneOrigin ?? [0, 0, 0];
   const a = toAbsolute(picks[0], origine);
+  const u = incertitudeCourante();
+  const pas = Number.isFinite(u.spacing) ? `${u.spacing.toFixed(2)} m` : '—';
   if (picks.length === 1) {
     table(el.measureOut, [
       ['point A', `${a.x.toFixed(1)} ; ${a.y.toFixed(1)}`],
       ['altitude A', `${a.z.toFixed(2)} m NGF`],
+      ['espacement ici', pas],
       ['', '<span class="dim">cliquez un second point</span>'],
     ]);
     return;
@@ -500,6 +522,10 @@ function renderMeasure() {
     ['azimut', Number.isFinite(m.azimuth) ? `${m.azimuth.toFixed(1)}°` : '—'],
     ['altitude A', `${a.z.toFixed(2)} m NGF`],
     ['altitude B', `${b.z.toFixed(2)} m NGF`],
+    ['espacement des points', pas],
+    ['incertitude en plan', `± ${u.horizontalDistance.toFixed(2)} m`,
+      u.horizontalDistance > 1 ? 'warn' : ''],
+    ['— en altitude', `± ${u.verticalDistance.toFixed(2)} m`],
   ]);
 }
 
@@ -641,6 +667,37 @@ el.colorMode.addEventListener('change', () => {
     .find((k) => COLOR_MODES[k] === viewer.materials.shared.uColorMode) ?? 'classe';
   renderLegend();
 });
+
+/**
+ * Filtre de hauteur : il ne s'allume que si un terrain répond.
+ *
+ * Sans terrain, il écarterait tout — ce qui ressemble à une panne. Plutôt que
+ * de vider la scène, on décoche la case et on dit pourquoi : c'est la seule
+ * façon de distinguer « aucun point dans cette plage » de « je ne sais pas ».
+ */
+const HINT_FILTRE = el.hFilterHint.textContent;
+function applyHeightFilter() {
+  const actif = el.hFilter.checked;
+  const pris = viewer.setHeightFilter(Number(el.hMin.value), Number(el.hMax.value), actif);
+  el.hMin.disabled = !actif;
+  el.hMax.disabled = !actif;
+  if (actif && !pris) {
+    el.hFilter.checked = false;
+    el.hMin.disabled = true;
+    el.hMax.disabled = true;
+    el.hFilterHint.innerHTML = '<b>Sans modèle de terrain, la hauteur au-dessus du sol '
+      + 'n’existe pas.</b> Chargez un nuage, le terrain suit.';
+  } else {
+    el.hFilterHint.textContent = HINT_FILTRE;
+  }
+  renderLegend();
+}
+
+for (const champ of [el.hFilter, el.hMin, el.hMax]) {
+  champ.addEventListener('change', applyHeightFilter);
+}
+el.hMin.disabled = true;
+el.hMax.disabled = true;
 
 el.round.addEventListener('change', () => {
   viewer.materials.setRound(el.round.checked);
