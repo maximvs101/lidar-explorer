@@ -141,9 +141,22 @@ preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
   donne l'impression de ne rien faire.
 - **Filtres de classe** instantanés : la classification vit sur le GPU, un octet
   par point indexant une palette.
+- **Coupe le long du segment mesuré** — une bande de largeur réglable, dont
+  tout le reste de la scène disparaît, et son **profil en travers** : distance
+  parcourue en abscisse, altitude NGF en ordonnée, points coloriés par classe et
+  ligne de sol officielle par-dessus. L'étirement vertical du tracé est annoncé,
+  parce que tous les profils étirent la verticale et que presque aucun ne le dit
+  — on finit par y lire des pentes qui n'existent pas.
+- **Filtre par hauteur au-dessus du sol** — deux bornes, pour isoler une strate :
+  le sol nu, les sous-bois, les émergents. Un point dont le sol est inconnu est
+  écarté ; le filtre garde ce qu'il peut prouver dans la plage.
+- **Empreinte de la vue sur la carte** — un secteur, un axe et un point sur la
+  cible : où l'on est et de quel côté on regarde, sans quitter la carte des yeux.
 - **Mesure dans la scène** — deux clics donnent distance 3D, distance
-  horizontale, dénivelé, pente en pourcentage *et* en degrés, azimut, et les
-  altitudes en NGF-IGN69. La mesure survit à la navigation. Le point sous le curseur est retrouvé en lisant le
+  horizontale, dénivelé, pente en pourcentage *et* en degrés, azimut, les
+  altitudes en NGF-IGN69, **et ce que tout cela vaut** : l'espacement du niveau
+  de détail affiché pèse souvent plus que les 50 cm de planimétrie annoncés par
+  l'IGN, et c'est ce terme-là que l'incertitude affichée fait apparaître. La mesure survit à la navigation. Le point sous le curseur est retrouvé en lisant le
   tampon de profondeur, ce qui coûte le même prix quel que soit le nombre de
   points et rend exactement ce que l'œil voit.
 - **Export d'image** jusqu'à quatre fois la résolution de l'écran. Les rayons

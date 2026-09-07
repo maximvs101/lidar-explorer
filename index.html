@@ -69,6 +69,17 @@
                     font: inherit; font-variant-numeric: tabular-nums; }
       #hfilterrow input[type=checkbox] { margin: 0; cursor: pointer; accent-color: var(--accent); }
       #hfilterhint { margin: 0 0 8px; }
+      #sectionrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+                    margin: 2px 0 6px; font-size: 11px; color: var(--dim);
+                    cursor: pointer; user-select: none; }
+      #sectionrow input[type=number] { width: 4em; background: var(--panel); color: var(--text);
+                    border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px;
+                    font: inherit; font-variant-numeric: tabular-nums; }
+      #sectionrow input[type=checkbox] { margin: 0; cursor: pointer; accent-color: var(--accent); }
+      #profile { display: block; width: 100%; height: 170px; border: 1px solid var(--line);
+                 border-radius: 4px; margin: 2px 0 4px; }
+      #profile[hidden] { display: none; }
+      #sectionhint { margin: 0 0 8px; }
       #roundrow, #neighbourrow { display: flex; align-items: center; gap: 7px;
                   margin: 2px 0 6px; font-size: 11px; color: var(--dim);
                   cursor: pointer; user-select: none; }
@@ -154,6 +165,7 @@
           <tr><td>molette</td><td>avancer et reculer</td></tr>
           <tr><td>clic gauche sans bouger</td><td>poser un point, en mode mesure</td></tr>
           <tr><td>Échap</td><td>quitter le mode mesure</td></tr>
+          <tr><td>deux points posés</td><td>ouvre la coupe le long du segment</td></tr>
         </table>
         <p class="foot">Le détail se charge selon l'endroit où vous regardez : approchez-vous
           pour l'affiner, reculez pour couvrir plus large. Les dalles voisines viennent
@@ -250,6 +262,17 @@
           <span id="measureactions" hidden><button id="measureclear">Effacer</button></span>
         </p>
         <div id="measureout"><span class="dim">—</span></div>
+        <div id="sectionbox" hidden>
+          <div class="sublabel">coupe le long du segment</div>
+          <label id="sectionrow">
+            <input id="section" type="checkbox">
+            <span>ne montrer qu'une bande de</span>
+            <input id="sectionwidth" type="number" value="10" step="1" min="1" max="200">
+            <span>m de large</span>
+          </label>
+          <canvas id="profile" hidden></canvas>
+          <p class="foot" id="sectionhint"></p>
+        </div>
         <p class="foot">Pour inspecter, pas pour arpenter. On ne vise pas un objet mais le
           point affiché le plus proche : l'espacement du niveau de détail courant pèse
           souvent plus que les 50 cm de planimétrie et 10 cm d'altimétrie annoncés par

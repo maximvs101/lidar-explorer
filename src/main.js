@@ -4,6 +4,7 @@ import { DecoderPool } from './decode/decoder.js';
 import { TileIndex, acquisitionSeason } from './geo/wfs.js';
 import { isWithinMetropole, tileNameAt } from './geo/projection.js';
 import { viewFootprint } from './geo/footprint.js';
+import { drawProfile } from './ui/profile.js';
 import { LocationPicker } from './ui/map.js';
 import { Viewer } from './render/viewer.js';
 import { PRESETS, PRESET_NAMES } from './render/presets.js';
@@ -52,6 +53,11 @@ const el = {
   measureOut: document.getElementById('measureout'),
   measureActions: document.getElementById('measureactions'),
   measureClear: document.getElementById('measureclear'),
+  sectionBox: document.getElementById('sectionbox'),
+  section: document.getElementById('section'),
+  sectionWidth: document.getElementById('sectionwidth'),
+  sectionHint: document.getElementById('sectionhint'),
+  profile: document.getElementById('profile'),
   progress: document.getElementById('progress'),
   progressBar: document.getElementById('progressbar'),
   progressText: document.getElementById('progresstext'),
@@ -530,11 +536,76 @@ function renderMeasure() {
   ]);
 }
 
+/**
+ * Coupe le long du segment mesuré.
+ *
+ * Elle n'a de sens qu'à deux points posés : le bloc n'apparaît donc pas avant.
+ * La bande masquée dans la scène et le profil dessiné lisent la même géométrie,
+ * celle de `analysis/section.js` — s'ils divergeaient, le tracé décrirait autre
+ * chose que ce qu'on voit.
+ */
+function renderSection() {
+  const actif = el.section.checked && picks.length >= 2;
+  el.sectionBox.hidden = picks.length < 2;
+  el.sectionWidth.disabled = !el.section.checked;
+  if (!actif) {
+    viewer.clearSection();
+    el.profile.hidden = true;
+    el.sectionHint.textContent = picks.length >= 2
+      ? 'La bande suit le segment posé ; déplacer un point la déplace.'
+      : '';
+    return;
+  }
+
+  const largeur = Math.max(1, Number(el.sectionWidth.value) || 1);
+  const coupe = viewer.sampleSection({
+    a: [picks[0].x, picks[0].y], b: [picks[1].x, picks[1].y], width: largeur, force: true,
+  });
+  if (!coupe) return;
+
+  // Le sol officiel en repère de scène, échantillonné le long du segment : on
+  // lit alors une hauteur au-dessus du sol directement sur le tracé.
+  const terrain = viewer.terrain;
+  const [ax, ay] = coupe.a;
+  const [bx, by] = coupe.b;
+  const origine = viewer.sceneOrigin ?? [0, 0, 0];
+  const terrainAt = terrain && coupe.axis.length > 0
+    ? (along) => {
+      const t = along / coupe.axis.length;
+      const z = terrain.heightAt(ax + (bx - ax) * t, ay + (by - ay) * t);
+      return Number.isNaN(z) ? NaN : z + origine[2];
+    }
+    : null;
+
+  // Le tracé est en altitude absolue, comme le reste des mesures.
+  const absolu = { ...coupe.sample, z: coupe.sample.z.map((z) => z + origine[2]) };
+  absolu.zMin = coupe.sample.zMin + origine[2];
+  absolu.zMax = coupe.sample.zMax + origine[2];
+
+  el.profile.hidden = false;
+  const rendu = drawProfile(el.profile, {
+    sample: absolu,
+    length: coupe.axis.length,
+    palette: viewer.materials.palette,
+    terrainAt,
+  });
+  el.sectionHint.innerHTML =
+    `${fmt(coupe.sample.count)} points sur ${formatDistance(coupe.axis.length)} de long, `
+    + `bande de ${largeur} m. Hauteurs étirées ×${rendu.exaggeration.toFixed(1)} — `
+    + `une pente lue ici est plus raide qu'elle ne l'est.`
+    + (coupe.sample.truncated ? ' <b>Tracé tronqué</b> : réduisez la bande.' : '');
+}
+
+el.section.addEventListener('change', renderSection);
+el.sectionWidth.addEventListener('change', renderSection);
+
 el.measureBtn.addEventListener('click', () => setMeasuring(!measuring));
 
 el.measureClear.addEventListener('click', () => {
   picks = [];
   viewer.clearMeasure();
+  el.section.checked = false;
+  renderSection();
   el.measureOut.innerHTML = measuring
     ? '<span class="dim">cliquez un premier point</span>'
     : '<span class="dim">—</span>';
@@ -575,6 +646,7 @@ vue.addEventListener('pointerup', (event) => {
   viewer.showMeasure(picks);
   el.measureActions.hidden = false;
   renderMeasure();
+  renderSection();
 });
 
 // Échap sort du mode mesure : c'est le réflexe, et le bouton est loin du curseur.

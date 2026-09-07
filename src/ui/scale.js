@@ -34,6 +34,13 @@ export function chooseScale({ pixelsPerMetre: ppm, minPx = 60, maxPx = 150 }) {
   return fallback ?? null;
 }
 
+/**
+ * Attention : cette écriture suppose une valeur **déjà ronde**, celle que
+ * `chooseScale` a choisie. Lui passer une longueur quelconque rend ses seize
+ * décimales telles quelles. Pour une distance arbitraire, c'est
+ * `formatDistance` d'`analysis/measure.js` qu'il faut appeler — les deux noms
+ * se ressemblent, et l'un a déjà été renommé pour cette raison.
+ */
 export function formatLength(metres) {
   return metres >= 1000 ? `${metres / 1000} km` : `${metres} m`;
 }

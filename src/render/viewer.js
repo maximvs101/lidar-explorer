@@ -6,6 +6,7 @@ import { PRESETS, getPreset } from './presets.js';
 import { ReliefRenderer } from './relief.js';
 import { ScenePicker } from './picker.js';
 import { histogram } from '../analysis/classStats.js';
+import { addToSection, emptySection, sectionAxis } from '../analysis/section.js';
 import { TerrainGrid, heightStats } from '../analysis/terrain.js';
 import { fetchRaster } from '../analysis/rasters.js';
 
@@ -73,6 +74,8 @@ export class Viewer {
     this._terrainBuiltAt = 0;
     this._publishedTerrain = null;
     this.heightFilter = null;
+    this.section = null;
+    this._sectionAt = 0;
     this.preset = getPreset('lecture');
     this.presetName = 'lecture';
     this.colorMode = this.preset.colorMode ?? 'classe';
@@ -515,6 +518,51 @@ export class Viewer {
   }
 
   /**
+   * Ne montre qu'une bande le long d'un segment, et rend ce qu'elle contient.
+   *
+   * Le masquage dans la scene et l'echantillon du profil lisent la meme
+   * geometrie — celle de `analysis/section.js`, dont le shader est le miroir.
+   * S'ils divergeaient, le profil decrirait autre chose que ce qu'on voit.
+   *
+   * Le parcours est en O(points) : quelques millions a chaque appel, donc un
+   * intervalle minimal, comme pour le terrain.
+   */
+  sampleSection({ a, b, width, minInterval = 400, force = false } = {}) {
+    if (!a || !b || !(width > 0)) {
+      this.section = null;
+      this.materials.setSection(null, null, 0);
+      return null;
+    }
+    const maintenant = performance.now();
+    const memeCoupe = this.section
+      && this.section.a[0] === a[0] && this.section.a[1] === a[1]
+      && this.section.b[0] === b[0] && this.section.b[1] === b[1]
+      && this.section.width === width;
+    if (!force && memeCoupe && maintenant - this._sectionAt < minInterval) return this.section;
+
+    this.materials.setSection(a, b, width);
+    const axis = sectionAxis(a, b);
+    const sample = emptySection();
+    for (const points of this.loaded.values()) {
+      addToSection(
+        sample, axis, width,
+        points.geometry.getAttribute('position').array,
+        points.geometry.getAttribute('classification').array,
+      );
+      if (sample.truncated) break;
+    }
+    this._sectionAt = maintenant;
+    this.section = { a: [a[0], a[1]], b: [b[0], b[1]], width, axis, sample };
+    return this.section;
+  }
+
+  /** Eteint la coupe : la scene redevient entiere. */
+  clearSection() {
+    this.section = null;
+    this.materials.setSection(null, null, 0);
+  }
+
+  /**
    * Ne montre que ce qui se tient entre deux hauteurs au-dessus du sol.
    *
    * Le terrain doit etre publie avant, sinon le filtre n'aurait rien contre
@@ -727,6 +775,7 @@ export class Viewer {
 
   clear() {
     this.clearMeasure();
+    this.clearSection();
     for (const controle of this._rasterAbort.values()) controle.abort();
     this._rasterAbort.clear();
     this.groundGrid = null;
