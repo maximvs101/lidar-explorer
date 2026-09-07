@@ -7,8 +7,8 @@ import { ReliefRenderer } from './relief.js';
 import { ScenePicker } from './picker.js';
 import { histogram } from '../analysis/classStats.js';
 import { TerrainGrid, heightStats } from '../analysis/terrain.js';
-import { fetchMnt } from '../analysis/mnt.js';
-import { WaterPlanarity, classContradictions, summarise } from '../analysis/audit.js';
+import { fetchRaster } from '../analysis/rasters.js';
+import { WaterPlanarity, classContradictions, summarise, surfaceExcess } from '../analysis/audit.js';
 
 /**
  * Rendu du nuage avec niveau de détail piloté par la caméra.
@@ -60,12 +60,15 @@ export class Viewer {
     // points peut exister avant son raster. Elle est en 512 cellules (5,9 m),
     // le comblement des trous parcourant la grille entiere a chaque passe.
     this.groundGrid = null;
-    this.mnt = null;
-    this.mntState = 'idle'; // idle | chargement | officiel | absent | erreur
-    this.mntError = null;
-    this._mntAbort = null;
+    // Les trois rasters derives, charges a la demande : le MNT des l'ouverture
+    // (tout en depend), le MNH et le MNS seulement quand un mode s'en sert.
+    // Chacun pese 4 Mo, les demander tous d'office serait payer pour rien.
+    this.rasters = new Map(); // produit -> RasterGrid
+    this.rasterState = new Map(); // produit -> idle | chargement | officiel | absent | erreur
+    this.rasterError = new Map();
+    this._rasterAbort = new Map();
     this.terrainCells = 512;
-    this.mntCells = 1024;
+    this.rasterCells = 1024;
     this.terrainSize = 3000;
     this.terrainStats = null;
     this._terrainBuiltAt = 0;
@@ -74,6 +77,7 @@ export class Viewer {
     this._auditAt = 0;
     this.preset = getPreset('lecture');
     this.presetName = 'lecture';
+    this.colorMode = this.preset.colorMode ?? 'classe';
     // Toutes les dalles partagent une seule origine de scene, celle de la
     // premiere chargee. Chacune garde en revanche son propre octree : son
     // centre est exprime par rapport a cette origine commune.
@@ -135,7 +139,7 @@ export class Viewer {
     // La grille suit le repere de scene, comme les points.
     this.groundGrid = new TerrainGrid({ center: [0, 0], size: this.terrainSize, cells: this.terrainCells });
     this.terrainStats = null;
-    this.loadOfficialTerrain();
+    this.loadRaster('mnt');
     this.addTile(tile, nodes);
 
     const { bounds } = tile.header;
@@ -245,48 +249,96 @@ export class Viewer {
     return this.mnt ?? this.groundGrid;
   }
 
-  /**
-   * Demande le MNT officiel sur l'emprise de la scene.
-   *
-   * Un echec ou une absence de couverture ne bloque rien : la grille calculee
-   * continue de servir, et `mntState` dit laquelle est en place. Taire la
-   * substitution serait donner une precision de 50 cm pour une estimation.
-   */
-  async loadOfficialTerrain() {
-    if (!this.origin) return null;
-    this._mntAbort?.abort();
-    const controle = new AbortController();
-    this._mntAbort = controle;
-    this.mnt = null;
-    this.mntError = null;
-    this.mntState = 'chargement';
+  /** Le MNT officiel s'il a repondu. Les deux autres rasters passent par `rasters`. */
+  get mnt() {
+    return this.rasters.get('mnt') ?? null;
+  }
 
-    try {
-      const grille = await fetchMnt({
-        center: [0, 0],
-        size: this.terrainSize,
-        cells: this.mntCells,
-        origin: this.origin,
-        signal: controle.signal,
-      });
-      if (controle.signal.aborted) return null;
-      if (!grille) {
-        this.mntState = 'absent';
-        return null;
+  /** Etat d'un produit, pour que l'interface dise ce qui repond et ce qui manque. */
+  rasterStatus(produit) {
+    return this.rasterState.get(produit) ?? 'idle';
+  }
+
+  /**
+   * Demande un raster officiel sur l'emprise de la scene.
+   *
+   * Un echec ou une absence de couverture ne bloque rien : pour le MNT, la
+   * grille calculee continue de servir ; pour les deux autres, le panneau
+   * n'affiche simplement pas de reference. Taire la substitution serait donner
+   * une precision de 50 cm pour une estimation.
+   *
+   * L'appel est idempotent : deux modes qui reclament le meme raster ne
+   * declenchent pas deux telechargements de 4 Mo.
+   */
+  async loadRaster(produit) {
+    if (!this.origin) return null;
+    if (this.rasters.has(produit)) return this.rasters.get(produit);
+    if (this.rasterStatus(produit) === 'chargement') return null;
+
+    this._rasterAbort.get(produit)?.abort();
+    const controle = new AbortController();
+    this._rasterAbort.set(produit, controle);
+    this.rasterError.delete(produit);
+    this.rasterState.set(produit, 'chargement');
+
+    // Deux tentatives, et la seconde ignore le cache. Le service assortit ses
+    // reponses d'erreur d'un `max-age` de vingt et un jours : sans cela, une
+    // panne d'une seconde condamnerait ce raster pour trois semaines, et
+    // reessayer la meme URL ne ferait que relire l'erreur mise de cote.
+    for (const cache of [undefined, 'reload']) {
+      try {
+        const grille = await fetchRaster({
+          produit,
+          center: [0, 0],
+          size: this.terrainSize,
+          cells: this.rasterCells,
+          origin: this.origin,
+          signal: controle.signal,
+          cache,
+        });
+        if (controle.signal.aborted) return null;
+        if (!grille) {
+          this.rasterState.set(produit, 'absent');
+          return null;
+        }
+        this.rasters.set(produit, grille);
+        this.rasterState.set(produit, 'officiel');
+        // Le terrain change sous les pieds du rendu : on republie tout de suite
+        // plutot que d'attendre le prochain passage, sinon les hauteurs affichees
+        // resteraient celles de la grille calculee sans que rien ne le dise.
+        if (produit === 'mnt') this.buildTerrain({ force: true });
+        return grille;
+      } catch (erreur) {
+        if (controle.signal.aborted) return null;
+        this.rasterState.set(produit, 'erreur');
+        this.rasterError.set(produit, erreur.message);
       }
-      this.mnt = grille;
-      this.mntState = 'officiel';
-      // Le terrain change sous les pieds du rendu : on republie tout de suite
-      // plutot que d'attendre le prochain passage, sinon les hauteurs affichees
-      // resteraient celles de la grille calculee sans que rien ne le dise.
-      this.buildTerrain({ force: true });
-      return grille;
-    } catch (erreur) {
-      if (controle.signal.aborted) return null;
-      this.mntState = 'erreur';
-      this.mntError = erreur.message;
-      return null;
     }
+    return null;
+  }
+
+  /**
+   * Reference de canopee : la distribution des hauteurs du MNH sur la zone
+   * regardee, au pas de 2,9 m et sans aucun trou.
+   *
+   * Elle ne remplace pas la statistique tiree des points, elle la juge : celle-ci
+   * ne porte que sur ce que l'octree a livre, et la composition en classes y
+   * varie d'un facteur 1,46 selon le niveau de detail. Deux chiffres proches
+   * disent que l'affichage est representatif ; deux chiffres qui divergent
+   * disent qu'il ne l'est pas.
+   *
+   * Le seuil ecarte le sol nu, qui n'est pas de la vegetation — mais il n'est
+   * pas non plus une donnee manquante, d'ou le comptage separe.
+   */
+  canopyReference({ size = 400, minHeight = 2 } = {}) {
+    const mnh = this.rasters.get('mnh');
+    if (!mnh) return null;
+    const cible = this.controls.target;
+    return {
+      ...mnh.distribution([cible.x, cible.y], size, { minValue: minHeight }),
+      size,
+      minHeight,
+    };
   }
 
   /**
@@ -358,14 +410,19 @@ export class Viewer {
       vegetationTropBasse: 0, batimentSousSol: 0, solEnLair: 0, testes: 0, sansSol: 0,
     };
     const eau = new WaterPlanarity({ cell: 20 });
+    // Le quatrieme controle n'a lieu que si le MNS a repondu : sans surface de
+    // reference, ne rien dire vaut mieux que dire « aucun depassement ».
+    const mns = this.rasters.get('mns');
+    let dessus = null;
     for (const points of this.loaded.values()) {
       const pos = points.geometry.getAttribute('position').array;
       const cls = points.geometry.getAttribute('classification').array;
       classContradictions(this.terrain, pos, cls, contradictions);
       eau.addPoints(pos, cls);
+      if (mns) dessus = surfaceExcess(mns, pos, cls, dessus);
     }
     this._auditAt = maintenant;
-    this.auditStats = summarise(contradictions, eau.report());
+    this.auditStats = { ...summarise(contradictions, eau.report()), surface: dessus };
     return this.auditStats;
   }
 
@@ -456,11 +513,24 @@ export class Viewer {
     // La couleur par hauteur remplace la couleur par classe ; sans terrain
     // pret, on n'active rien plutot que de peindre du gris partout.
     // Un seul aiguillage : le preset nomme sa source de couleur.
-    const mode = preset.colorMode ?? (preset.heightMode ? 'hauteur' : preset.auditMode ? 'audit' : 'classe');
+    const mode = preset.colorMode ?? 'classe';
+    // La source de couleur appliquee, retenue sous un nom stable : c'est elle
+    // que l'interface interroge pour savoir quel panneau afficher. L'avoir
+    // laissee deduire des champs du preset a deja coute cher — les champs
+    // `heightMode` et `auditMode` ont disparu des presets, et les deux panneaux
+    // qui les testaient ont cesse de s'afficher sans que rien ne le signale.
+    this.colorMode = mode;
     this.materials.setHeightScale(preset.heightMax ?? 30);
     if (mode === 'hauteur' || mode === 'audit') this.buildTerrain({ force: true });
     this.materials.setColorMode(mode);
-    if (mode === 'audit') this.runAudit({ force: true });
+    // Chaque mode ne reclame que le raster dont il se sert : le MNH decrit la
+    // canopee sur toute l'emprise, le MNS sert de plafond a l'audit. L'appel
+    // est idempotent, et rend la main sans attendre les 4 Mo.
+    if (mode === 'hauteur') this.loadRaster('mnh');
+    if (mode === 'audit') {
+      this.loadRaster('mns').then(() => this.runAudit({ force: true }));
+      this.runAudit({ force: true });
+    }
     if (mode === 'intensite') this.autoIntensityRange();
 
   }
@@ -651,12 +721,12 @@ export class Viewer {
 
   clear() {
     this.clearMeasure();
-    this._mntAbort?.abort();
-    this._mntAbort = null;
+    for (const controle of this._rasterAbort.values()) controle.abort();
+    this._rasterAbort.clear();
     this.groundGrid = null;
-    this.mnt = null;
-    this.mntState = 'idle';
-    this.mntError = null;
+    this.rasters.clear();
+    this.rasterState.clear();
+    this.rasterError.clear();
     this._publishedTerrain = null;
     this.terrainStats = null;
     this.auditStats = null;

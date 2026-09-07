@@ -123,7 +123,7 @@ function renderLegend() {
   // En mode hauteur, les pastilles ne décrivent plus ce qui est à l'écran : la
   // couleur vient de la hauteur au-dessus du sol. Le dire, sinon la légende
   // affirme quelque chose de faux.
-  const parClasse = !viewer.preset.heightMode;
+  const parClasse = viewer.colorMode !== 'hauteur';
   el.legend.classList.toggle('muted', !parClasse);
   el.biais.textContent = parClasse
     ? 'Parts calculées sur les points actuellement affichés, pas sur la composition ' +
@@ -723,9 +723,9 @@ function renderProgress() {
  * précision du premier.
  */
 function sourceTerrain() {
-  switch (viewer.mntState) {
+  switch (viewer.rasterStatus('mnt')) {
     case 'officiel':
-      return { libelle: `MNT IGN · ${viewer.mntCells} px`, warn: false };
+      return { libelle: `MNT IGN · ${viewer.rasterCells} px`, warn: false };
     case 'chargement':
       return { libelle: 'points de sol (MNT en cours…)', warn: false };
     case 'absent':
@@ -734,6 +734,36 @@ function sourceTerrain() {
       return { libelle: 'points de sol — MNT indisponible', warn: true };
     default:
       return { libelle: 'points de sol', warn: false };
+  }
+}
+
+/**
+ * Part d'une famille de classes au-dessus du MNS.
+ *
+ * Le compte brut ne dit rien — mille points sur dix millions ne pèsent pas
+ * comme sur vingt mille — et une famille absente de la zone chargée n'a pas de
+ * part du tout, ce qui n'est pas zéro.
+ */
+function part(surface, cle) {
+  const f = surface?.familles?.[cle];
+  return f && f.testes > 0 ? (100 * f.dessus) / f.testes : NaN;
+}
+
+function partFamille(surface, cle) {
+  const v = part(surface, cle);
+  if (!Number.isFinite(v)) return '—';
+  const f = surface.familles[cle];
+  return `${v.toFixed(2)} % de ${fmt(f.testes)}`;
+}
+
+/** État d'un raster secondaire, en une ligne de tableau. */
+function etatRaster(produit) {
+  switch (viewer.rasterStatus(produit)) {
+    case 'officiel': return { libelle: 'disponible', warn: false };
+    case 'chargement': return { libelle: 'chargement…', warn: false };
+    case 'absent': return { libelle: 'non couvert ici', warn: true };
+    case 'erreur': return { libelle: 'indisponible', warn: true };
+    default: return { libelle: '—', warn: false };
   }
 }
 
@@ -746,9 +776,11 @@ setInterval(() => {
   // En mode canopée, on affiche ce que la mesure vaut : la part de terrain
   // réellement observée. Sous couvert dense elle chute, et les hauteurs
   // deviennent des estimations — le taire serait donner du chiffre pour du fait.
-  if (session && viewer.preset.heightMode) {
+  if (session && viewer.colorMode === 'hauteur') {
     const t = viewer.terrainStats;
     const c = viewer.canopyStats();
+    const ref = viewer.canopyReference();
+    const etatMnh = etatRaster('mnh');
     // Mesurée autour du point visé, sur 400 m : c'est cette part-là qui dit si
     // les hauteurs affichées reposent sur du sol vu ou sur une interpolation.
     const cible = viewer.controls.target;
@@ -771,14 +803,25 @@ setInterval(() => {
       ['hauteur médiane des cimes', c && Number.isFinite(c.p99) ? `${c.p99.toFixed(1)} m` : '—'],
       ['hauteur maximale', c && Number.isFinite(c.max) ? `${c.max.toFixed(1)} m` : '—'],
       ['échelle de couleur', `0 → ${viewer.preset.heightMax ?? 30} m`],
+      // Le MNH décrit toute l'emprise au même pas, quel que soit le niveau de
+      // détail chargé. Les chiffres au-dessus, eux, ne portent que sur les
+      // points affichés — deux valeurs proches disent que l'affichage est
+      // représentatif, deux valeurs qui divergent disent qu'il ne l'est pas.
+      ['— référence MNH', ref ? `${ref.size} m autour du point visé` : etatMnh.libelle,
+        etatMnh.warn ? 'warn' : ''],
+      ['cellules > 2 m', ref ? `${fmt(ref.count)} / ${fmt(ref.total)}` : '—'],
+      ['— médiane', ref && Number.isFinite(ref.median) ? `${ref.median.toFixed(1)} m` : '—'],
+      ['— p99', ref && Number.isFinite(ref.p99) ? `${ref.p99.toFixed(1)} m` : '—'],
+      ['— maximum', ref && Number.isFinite(ref.max) ? `${ref.max.toFixed(1)} m` : '—'],
     ]);
   }
 
   // Audit : des parts, pas des comptes bruts — mille points douteux sur dix
   // millions ne pèsent pas comme sur vingt mille. Et « rien à redire » n'est
   // pas « vérifié » : seul ce que le sol connu permet de juger est compté.
-  if (session && viewer.preset.auditMode) {
+  if (session && viewer.colorMode === 'audit') {
     const a = viewer.auditStats;
+    const etatMns = etatRaster('mns');
     const pct = (v) => (Number.isFinite(v) ? `${v.toFixed(2)} %` : '—');
     const m = (v) => (Number.isFinite(v) ? `${v.toFixed(2)} m` : '—');
     const srcAudit = sourceTerrain();
@@ -795,6 +838,19 @@ setInterval(() => {
         a.eau.ratio > 0.1 ? 'err' : ''],
       ['étendue max de l’eau', m(a.eau.etendueMax), a.eau.etendueMax > 0.5 ? 'err' : ''],
       ['— seuil admis', m(a.eau.seuil)],
+      // Ce qui dépasse le MNS officiel. Le MNS est une grille : il ne tient
+      // ni câble, ni branche, ni antenne — un dépassement n'est donc pas une
+      // faute, c'est ce que le raster ne sait pas représenter. Seule la
+      // comparaison entre familles est lisible, et le sol sert de témoin :
+      // il ne dépasse jamais une surface correctement calée.
+      ['au-dessus du MNS', a.surface
+        ? `${fmt(a.surface.dessus)} · ${pct(100 * a.surface.dessus / Math.max(a.surface.testes, 1))}`
+        : etatMns.libelle, !a.surface && etatMns.warn ? 'warn' : ''],
+      ['— sol et eau (témoin)', partFamille(a.surface, 'sol'),
+        a.surface && part(a.surface, 'sol') > 1 ? 'err' : ''],
+      ['— non classés', partFamille(a.surface, 'nonClasse')],
+      ['— sursol pérenne', partFamille(a.surface, 'sursol')],
+      ['— dépassement max', a.surface && a.surface.dessus > 0 ? m(a.surface.ecartMax) : '—'],
     ] : [['audit', 'en cours…']]);
   }
 

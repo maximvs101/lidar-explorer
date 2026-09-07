@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MntGrid, NODATA, decodeBil, fetchMnt, mntUrl } from '../src/analysis/mnt.js';
+import { NODATA, PRODUITS, RasterGrid, decodeBil, fetchRaster, rasterUrl } from '../src/analysis/rasters.js';
 import { TerrainGrid } from '../src/analysis/terrain.js';
 
 /**
@@ -22,7 +22,7 @@ function reponse(buffer, { ok = true, status = 200 } = {}) {
 
 describe('URL du service', () => {
   it('demande bien du float32 brut, en Lambert-93', () => {
-    const u = new URL(mntUrl({ bbox: [843000, 6455000, 846000, 6458000], pixels: 1024 }));
+    const u = new URL(rasterUrl({ bbox: [843000, 6455000, 846000, 6458000], pixels: 1024 }));
     expect(u.searchParams.get('FORMAT')).toBe('image/x-bil;bits=32');
     expect(u.searchParams.get('CRS')).toBe('EPSG:2154');
     expect(u.searchParams.get('BBOX')).toBe('843000,6455000,846000,6458000');
@@ -31,10 +31,22 @@ describe('URL du service', () => {
     expect(u.searchParams.get('LAYERS')).toMatch(/MNT/);
   });
 
+  it('vise la bonne couche selon le produit', () => {
+    const couche = (produit) => new URL(rasterUrl({ bbox: [0, 0, 1, 1], pixels: 4, produit }))
+      .searchParams.get('LAYERS');
+    expect(couche('mnt')).toMatch(/_MNT_/);
+    expect(couche('mns')).toMatch(/_MNS_/);
+    expect(couche('mnh')).toMatch(/_MNH_/);
+    // Trois couches distinctes : une faute de frappe qui en collerait deux
+    // rendrait des hauteurs plausibles et fausses.
+    expect(new Set(['mnt', 'mns', 'mnh'].map(couche)).size).toBe(3);
+    expect(() => rasterUrl({ bbox: [0, 0, 1, 1], pixels: 4, produit: 'mno' })).toThrow(/inconnu/);
+  });
+
   it('refuse une taille que le service rejetterait', () => {
-    expect(() => mntUrl({ bbox: [0, 0, 1, 1], pixels: 6000 })).toThrow(/5010/);
-    expect(() => mntUrl({ bbox: [0, 0, 1, 1], pixels: 1 })).toThrow();
-    expect(() => mntUrl({ bbox: [0, 0, 1, 1], pixels: 512.5 })).toThrow(/entier/);
+    expect(() => rasterUrl({ bbox: [0, 0, 1, 1], pixels: 6000 })).toThrow(/5010/);
+    expect(() => rasterUrl({ bbox: [0, 0, 1, 1], pixels: 1 })).toThrow();
+    expect(() => rasterUrl({ bbox: [0, 0, 1, 1], pixels: 512.5 })).toThrow(/entier/);
   });
 });
 
@@ -58,7 +70,7 @@ describe('décodage BIL', () => {
       [100, 101], // nord
       [200, 201], // sud
     ]);
-    const g = new MntGrid({ center: [0, 0], size: 200, cells: 2, ...decodeBil(buffer, 2) });
+    const g = new RasterGrid({ center: [0, 0], size: 200, cells: 2, ...decodeBil(buffer, 2) });
     expect(g.heightAt(-50, +50)).toBe(100); // nord-ouest
     expect(g.heightAt(+50, +50)).toBe(101); // nord-est
     expect(g.heightAt(-50, -50)).toBe(200); // sud-ouest
@@ -69,7 +81,7 @@ describe('décodage BIL', () => {
     const buffer = bil([[NODATA, 120], [130, 140]]);
     const { known, observed } = decodeBil(buffer, 2);
     expect(observed).toBe(3);
-    const g = new MntGrid({ center: [0, 0], size: 200, cells: 2, ...decodeBil(buffer, 2) });
+    const g = new RasterGrid({ center: [0, 0], size: 200, cells: 2, ...decodeBil(buffer, 2) });
     expect(Number.isNaN(g.heightAt(-50, 50))).toBe(true);
     expect(Number.isNaN(g.aboveGround(-50, 50, 300))).toBe(true);
     expect(g.aboveGround(50, 50, 140)).toBeCloseTo(20);
@@ -82,9 +94,9 @@ describe('décodage BIL', () => {
   });
 });
 
-describe('MntGrid', () => {
+describe('RasterGrid', () => {
   it('est utilisable sans construction : le raster arrive complet', () => {
-    const g = new MntGrid({ center: [0, 0], size: 100, cells: 2, ...decodeBil(bil([[5, 5], [5, 5]]), 2) });
+    const g = new RasterGrid({ center: [0, 0], size: 100, cells: 2, ...decodeBil(bil([[5, 5], [5, 5]]), 2) });
     expect(g.filled).toBe(true);
     expect(g.source).toBe('mnt');
     expect(g.step).toBe(50);
@@ -97,7 +109,7 @@ describe('MntGrid', () => {
     for (const nom of ['heightAt', 'aboveGround', 'coverage', 'coverageWithin', 'index']) {
       expect(typeof Object.getPrototypeOf(calcule)[nom] ?? null).toBeDefined();
     }
-    const officiel = new MntGrid({ center: [0, 0], size: 100, cells: 2, ...decodeBil(bil([[5, 5], [5, 5]]), 2) });
+    const officiel = new RasterGrid({ center: [0, 0], size: 100, cells: 2, ...decodeBil(bil([[5, 5], [5, 5]]), 2) });
     for (const nom of ['heightAt', 'aboveGround', 'coverage', 'coverageWithin', 'index']) {
       expect(typeof officiel[nom]).toBe('function');
     }
@@ -121,7 +133,7 @@ describe('récupération', () => {
 
   it('décale la fenêtre par l’origine de scène', async () => {
     let vue = null;
-    const g = await fetchMnt({
+    const g = await fetchRaster({
       center: [0, 0],
       size: 3000,
       cells: 4,
@@ -141,7 +153,7 @@ describe('récupération', () => {
     // Sans cette translation, l'écart mesuré sur Toulouse était de −632,36 m,
     // très exactement l'origine de la dalle. Rien ne plante : les hauteurs de
     // canopée sortent simplement toutes négatives.
-    const g = await fetchMnt({
+    const g = await fetchRaster({
       size: 200, cells: 2, origin: [843500, 6455500, 632.33],
       fetchImpl: async () => reponse(bil([[700, 700], [700, 700]])),
     });
@@ -150,10 +162,26 @@ describe('récupération', () => {
     expect(g.aboveGround(0, 0, 710 - 632.33)).toBeCloseTo(10, 3);
   });
 
+  it('ne translate PAS le MNH, qui est déjà une hauteur', async () => {
+    // Le MNT et le MNS portent des altitudes NGF, que la scène ramène dans son
+    // repère ; le MNH porte une hauteur au-dessus du sol. Lui appliquer la même
+    // translation donnerait des arbres à −600 m — sans la moindre erreur.
+    const commun = {
+      size: 200, cells: 2, origin: [843500, 6455500, 632.33],
+      fetchImpl: async () => reponse(bil([[700, 700], [700, 700]])),
+    };
+    const sol = await fetchRaster({ ...commun, produit: 'mnt' });
+    const haut = await fetchRaster({ ...commun, produit: 'mnh' });
+    expect(sol.heightAt(0, 0)).toBeCloseTo(67.67, 3);
+    expect(haut.heightAt(0, 0)).toBe(700);
+    expect(haut.zOffset).toBe(0);
+    expect(PRODUITS.mnh.altitude).toBe(false);
+  });
+
   it('ne translate pas la sentinelle d’absence', async () => {
     // Décalée, −9999 deviendrait une altitude comme une autre : le rendu la
     // reconnaît à sa valeur, et peindrait du terrain là où il n'y en a pas.
-    const g = await fetchMnt({
+    const g = await fetchRaster({
       size: 200, cells: 2, minCoverage: 0.2, origin: [0, 0, 500],
       fetchImpl: async () => reponse(bil([[NODATA, NODATA], [NODATA, 700]])),
     });
@@ -164,7 +192,7 @@ describe('récupération', () => {
 
   it('suit un centre décalé dans la scène', async () => {
     let vue = null;
-    await fetchMnt({
+    await fetchRaster({
       center: [500, -500],
       size: 1000,
       cells: 4,
@@ -177,7 +205,7 @@ describe('récupération', () => {
   it('rend null hors couverture plutôt qu’un terrain vide', async () => {
     // En mer, le service répond 200 avec -9999 partout. Le prendre pour un
     // terrain donnerait des hauteurs nulles au lieu d'aucune hauteur.
-    const g = await fetchMnt({
+    const g = await fetchRaster({
       size: 3000, cells: 4, origin: [0, 0, 0],
       fetchImpl: async () => reponse(plat(4, NODATA)),
     });
@@ -186,7 +214,7 @@ describe('récupération', () => {
 
   it('accepte une couverture partielle au-dessus du seuil', async () => {
     const moitie = bil([[NODATA, NODATA], [120, 121]]);
-    const g = await fetchMnt({
+    const g = await fetchRaster({
       size: 200, cells: 2, minCoverage: 0.5, origin: [0, 0, 0],
       fetchImpl: async () => reponse(moitie),
     });
@@ -200,16 +228,92 @@ describe('récupération', () => {
     const xml = new TextEncoder().encode(
       '<?xml version="1.0"?><ServiceExceptionReport><ServiceException code="InvalidCRS"/>',
     ).buffer;
-    await expect(fetchMnt({
+    await expect(fetchRaster({
       size: 3000, cells: 4, origin: [0, 0, 0],
       fetchImpl: async () => reponse(xml),
     })).rejects.toThrow(/InvalidCRS/);
   });
 
   it('remonte un échec HTTP', async () => {
-    await expect(fetchMnt({
+    await expect(fetchRaster({
       size: 3000, cells: 4, origin: [0, 0, 0],
       fetchImpl: async () => reponse(new ArrayBuffer(64), { ok: false, status: 503 }),
     })).rejects.toThrow(/503/);
+  });
+});
+
+describe('distribution sur une emprise', () => {
+  // Ce que le raster a d'irremplaçable : il décrit toute la zone au même pas,
+  // alors que les statistiques tirées des points ne portent que sur ce que
+  // l'octree a livré.
+  const grille = (lignes) => new RasterGrid({
+    center: [0, 0], size: 400, cells: lignes.length, produit: 'mnh',
+    ...decodeBil(bil(lignes), lignes.length),
+  });
+
+  it('rend médiane, centiles et maximum', () => {
+    const g = grille([[0, 10, 20, 30], [0, 10, 20, 40], [0, 10, 20, 30], [0, 10, 20, 30]]);
+    const d = g.distribution([0, 0], 1000);
+    expect(d.count).toBe(16);
+    expect(d.median).toBe(20);
+    expect(d.max).toBe(40);
+    expect(d.unknown).toBe(0);
+  });
+
+  it('se restreint à l’emprise demandée', () => {
+    // 4 cellules de 100 m : une fenêtre de 100 m au centre n'en prend pas 16.
+    const g = grille([[0, 0, 0, 0], [0, 5, 5, 0], [0, 5, 5, 0], [0, 0, 0, 0]]);
+    const large = g.distribution([0, 0], 1000);
+    const etroite = g.distribution([0, 0], 100);
+    expect(large.total).toBe(16);
+    expect(etroite.total).toBeLessThan(large.total);
+    expect(etroite.median).toBe(5);
+    expect(large.median).toBe(0);
+  });
+
+  it('écarte les valeurs sous le seuil sans les compter comme absentes', () => {
+    // Pour la canopée : le sol nu (hauteur ~0) n'est pas de la végétation, mais
+    // il n'est pas non plus une donnée manquante.
+    const g = grille([[0, 0, 18, 22], [0, 0, 18, 22], [0, 0, 18, 22], [0, 0, 18, 22]]);
+    const tout = g.distribution([0, 0], 1000);
+    const hautes = g.distribution([0, 0], 1000, { minValue: 2 });
+    expect(tout.median).toBe(18);
+    expect(hautes.count).toBe(8);
+    expect(hautes.median).toBe(22);
+    expect(hautes.unknown).toBe(0);
+  });
+
+  it('compte les cellules absentes plutôt que de les ignorer', () => {
+    const g = grille([[NODATA, NODATA], [10, 20]]);
+    const d = g.distribution([0, 0], 1000);
+    expect(d.total).toBe(4);
+    expect(d.count).toBe(2);
+    expect(d.unknown).toBe(2);
+  });
+
+  it('rend NaN sur une emprise vide plutôt qu’un zéro', () => {
+    const g = grille([[NODATA, NODATA], [NODATA, NODATA]]);
+    const d = g.distribution([0, 0], 1000);
+    expect(d.count).toBe(0);
+    expect(Number.isNaN(d.median)).toBe(true);
+  });
+});
+
+describe('cache', () => {
+  it('transmet l’option de cache à fetch', async () => {
+    // Le service assortit ses réponses d'erreur d'un max-age de 21 jours : une
+    // panne d'une seconde reste figée trois semaines, et redemander la même URL
+    // ne fait que relire l'erreur. Une reprise n'a de sens qu'en revalidant.
+    const vues = [];
+    const plat = bil([[10, 10], [10, 10]]);
+    await fetchRaster({
+      size: 200, cells: 2, origin: [0, 0, 0],
+      fetchImpl: async (url, opts) => { vues.push(opts?.cache); return reponse(plat); },
+    });
+    await fetchRaster({
+      size: 200, cells: 2, origin: [0, 0, 0], cache: 'reload',
+      fetchImpl: async (url, opts) => { vues.push(opts?.cache); return reponse(plat); },
+    });
+    expect(vues).toEqual([undefined, 'reload']);
   });
 });

@@ -81,15 +81,28 @@ preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
 - **Export d'image** jusqu'à quatre fois la résolution de l'écran. Les rayons
   d'ombrage, exprimés en texels, sont mis à l'échelle du facteur d'export :
   sans cela l'image produite ne ressemblerait pas à ce qu'on voyait.
-- **Canopée et audit** — les hauteurs au-dessus du sol s'appuient sur le **MNT
-  officiel de l'IGN**, demandé au service WMS sur l'emprise chargée, en float32
-  brut (`image/x-bil;bits=32`) : 4 Mo pour 3 km en 1024 cellules, soit une maille
-  de 2,9 m sans aucun trou. Le format évite d'ajouter un décodeur GeoTIFF.
-  Quand le raster n'est pas publié sur la zone, le terrain reconstruit depuis les
-  seuls points de sol prend le relais, et le panneau dit laquelle des deux
-  sources répond. L'audit y compare la classification à trois contrôles
-  objectifs : végétation haute posée au sol, bâtiment sous le terrain, et surface
-  d'eau non horizontale.
+- **Les trois rasters dérivés de l'IGN**, demandés au service WMS sur l'emprise
+  chargée, en float32 brut (`image/x-bil;bits=32`) : 4 Mo pour 3 km en 1024
+  cellules, soit une maille de 2,9 m sans aucun trou. Le format évite d'ajouter
+  un décodeur GeoTIFF. Chacun n'est demandé que par le mode qui s'en sert.
+
+  | raster | ce qu'il apporte |
+  |---|---|
+  | `MNT` | le sol. Il remplace le terrain qu'on reconstruisait depuis les seuls points classés sol, qui avait des trous sous le couvert |
+  | `MNH` | la hauteur au-dessus du sol sur **toute** l'emprise, quel que soit le niveau de détail chargé : c'est la référence contre laquelle se juge la statistique tirée des points affichés |
+  | `MNS` | la surface. Elle sert de plafond à l'audit |
+
+  Quand un raster n'est pas publié sur la zone, le panneau le dit ; pour le MNT,
+  le terrain reconstruit depuis les points de sol prend le relais.
+
+- **Audit de classification** — quatre contrôles objectifs : végétation haute
+  posée au sol, bâtiment sous le terrain, surface d'eau non horizontale, et
+  points au-dessus du MNS. Ce dernier se lit par famille de classes, jamais en un
+  chiffre global : le MNS est une grille, il ne tient ni câble, ni branche, ni
+  antenne, et un dépassement n'est pas une faute en soi. Mesuré sur une dalle de
+  Toulouse — sol et eau **0,06 %** et **0,00 %**, bâti 18 %, non classés 23,5 %,
+  sursol pérenne (pylônes, mâts) **98 %**. Le sol et l'eau font le témoin : ils ne
+  dépassent jamais une surface correctement calée.
 - **Coloration au choix** — par classe, par **intensité** (réflectance, bornée
   automatiquement sur les centiles de la zone chargée), par **nombre de retours**
   (un tir multi-écho a traversé du feuillage), par **bande de vol** (les passes
@@ -128,6 +141,14 @@ preset : comparer deux rendus ne doit pas obliger à tout régler de nouveau.
   observées, donc plus rien d'inventé par diffusion, et un terrain complet dès
   l'ouverture de la dalle au lieu de s'améliorer à mesure que les points
   arrivent.
+- Les rasters sont lus à **2,9 m alors qu'ils sont produits à 50 cm** : le sol,
+  lisse, n'y perd rien, mais la surface si. Mesuré sur une même emprise, la part
+  de points dépassant le MNS de 2 m passe de 7,6 % à 50 cm à 15,8 % à 2,9 m. Le
+  chiffre décrit la lecture faite, pas la surface.
+- Le service assortit ses **réponses d'erreur** d'un `Cache-Control` de
+  **vingt et un jours**. Une panne d'une seconde reste donc figée trois semaines
+  dans le cache du navigateur, et redemander la même URL ne fait que relire
+  l'erreur : la reprise force la revalidation.
 - Les **parts de classes affichées** portent sur les points chargés, pas sur la
   composition du terrain. Mesuré sur emprise identique, la végétation haute pèse
   24,3 % au niveau 2 de l'octree contre 16,6 % tous niveaux réunis.
@@ -153,6 +174,11 @@ classés sol de la dalle de Toulouse, l'écart au raster a une médiane de −3,
 et 91 % restent sous 20 cm. Le témoin — la même lecture sur une grille
 volontairement retournée nord/sud — tombe à 7,3 % sous 20 cm : la mesure
 distingue donc bien un terrain calé d'un terrain qui ne l'est pas.
+
+Les trois rasters sont contrôlés l'un par l'autre : sur nos propres grilles,
+`MNS − MNT − MNH` a une médiane nulle, des centiles à ±0,28 m et 0,15 % de
+cellules au-delà du mètre. Et l'audit porte son propre témoin — le sol et l'eau
+ne dépassent la surface que pour 0,06 % et 0,00 % de leurs points.
 
 ## Données et licences
 

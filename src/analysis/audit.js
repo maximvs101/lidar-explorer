@@ -75,6 +75,95 @@ export function classContradictions(grid, positions, classification, into = null
 }
 
 /**
+ * Familles de classes, pour lire le dépassement de surface autrement qu'en un
+ * chiffre global. L'ordre est celui de l'affichage.
+ */
+export const FAMILLES_SURFACE = [
+  { cle: 'sol', libelle: 'sol et eau', codes: [2, 9] },
+  { cle: 'vegetation', libelle: 'végétation', codes: [3, 4, 5] },
+  { cle: 'bati', libelle: 'bâti', codes: [6] },
+  { cle: 'pont', libelle: 'pont', codes: [17] },
+  { cle: 'sursol', libelle: 'sursol pérenne', codes: [64] },
+  { cle: 'nonClasse', libelle: 'non classés', codes: [1] },
+  { cle: 'bruit', libelle: 'bruit', codes: [7, 18] },
+];
+
+const FAMILLE_PAR_CODE = new Map(
+  FAMILLES_SURFACE.flatMap((f) => f.codes.map((c) => [c, f.cle])),
+);
+
+/** Marge au-dessus du MNS avant de compter un point comme dépassant. */
+export const MARGE_SURFACE = 2;
+
+function familleVide() {
+  return { testes: 0, dessus: 0, ecartMax: 0 };
+}
+
+/**
+ * Points qui dépassent la surface officielle, ventilés par famille de classes.
+ *
+ * Le MNS est une **grille** : il ne peut pas tenir un câble, une branche, un
+ * garde-corps ni une antenne. Un point au-dessus n'est donc pas une faute en
+ * soi — c'est ce que le raster ne sait pas représenter. Compter les
+ * dépassements sans les ventiler ne dirait rien.
+ *
+ * Ce qui parle, c'est la comparaison entre familles. Mesuré sur une dalle de
+ * Toulouse, à 2,9 m de maille :
+ *
+ * | famille | au-dessus de 2 m |
+ * |---|---|
+ * | sol et eau | 0,06 % / 0,00 % |
+ * | végétation basse et moyenne | 0,03 % / 0,18 % |
+ * | pont | 7,4 % |
+ * | végétation haute | 16,3 % |
+ * | bâti | 18,1 % |
+ * | non classés | 23,5 % |
+ * | sursol pérenne | 97,9 % |
+ *
+ * Le sol et l'eau forment le **témoin** : ils ne dépassent jamais une surface
+ * correctement calée, et un chiffre non nul là dénoncerait le recalage bien
+ * avant de dénoncer la donnée. À l'autre bout, le sursol pérenne — pylônes,
+ * mâts, grues — dépasse presque toujours, parce que l'IGN l'écarte justement de
+ * son MNS. Entre les deux, la part des points non classés dit ce que la
+ * classification a laissé de côté.
+ *
+ * Attention à la résolution : lu à 2,9 m au lieu des 50 cm natifs, le
+ * dépassement double environ (mesuré 15,8 % contre 7,6 % sur une même emprise).
+ * Le chiffre décrit donc la lecture faite, pas la surface elle-même.
+ */
+export function surfaceExcess(mns, positions, classification, into = null, { marge = MARGE_SURFACE } = {}) {
+  const bilan = into ?? {
+    testes: 0,
+    sansSurface: 0,
+    dessus: 0,
+    ecartMax: 0,
+    marge,
+    familles: Object.fromEntries(
+      [...FAMILLES_SURFACE.map((f) => f.cle), 'autres'].map((cle) => [cle, familleVide()]),
+    ),
+  };
+
+  for (let n = 0; n < classification.length; n += 1) {
+    const surface = mns.heightAt(positions[n * 3], positions[n * 3 + 1]);
+    if (Number.isNaN(surface)) {
+      bilan.sansSurface += 1;
+      continue;
+    }
+    bilan.testes += 1;
+    const famille = bilan.familles[FAMILLE_PAR_CODE.get(classification[n]) ?? 'autres'];
+    famille.testes += 1;
+
+    const ecart = positions[n * 3 + 2] - surface;
+    if (ecart <= marge) continue;
+    bilan.dessus += 1;
+    famille.dessus += 1;
+    if (ecart > bilan.ecartMax) bilan.ecartMax = ecart;
+    if (ecart > famille.ecartMax) famille.ecartMax = ecart;
+  }
+  return bilan;
+}
+
+/**
  * Planéité de l'eau.
  *
  * C'est le seul contrôle d'ici qui permette d'écrire « faux » plutôt que

@@ -6,6 +6,9 @@ import {
   WaterPlanarity,
   classContradictions,
   summarise,
+  FAMILLES_SURFACE,
+  MARGE_SURFACE,
+  surfaceExcess,
 } from '../src/analysis/audit.js';
 
 /** Terrain plat à l'altitude 100, entièrement observé. */
@@ -196,5 +199,84 @@ describe('constantes', () => {
     for (const [nom, v] of Object.entries(TOLERANCES)) {
       expect(v, nom).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('dépassement de la surface officielle', () => {
+  // Un MNS plat à 120 m, en repère de scène ; pas de couverture au-delà de 900.
+  const surface = (z = 120) => ({ heightAt: (x) => (x > 900 ? NaN : z) });
+
+  it('ventile par famille de classes plutôt que de tout additionner', () => {
+    // Le MNS est une grille : il ne tient ni câble ni antenne. Un dépassement
+    // n'est donc pas une faute en soi, et le compte global ne dit rien — c'est
+    // la comparaison entre familles qui parle.
+    const pos = new Float32Array([
+      0, 0, 130, // +10 m, non classé
+      1, 0, 131, // +11 m, sursol pérenne
+      2, 0, 129, // +9 m, végétation haute
+      3, 0, 128, // +8 m, bâti
+      4, 0, 100, // sol, bien en dessous
+    ]);
+    const cls = new Uint8Array([1, 64, 5, 6, 2]);
+    const r = surfaceExcess(surface(), pos, cls);
+    expect(r.testes).toBe(5);
+    expect(r.dessus).toBe(4);
+    expect(r.familles.nonClasse).toEqual({ testes: 1, dessus: 1, ecartMax: 10 });
+    expect(r.familles.sursol.dessus).toBe(1);
+    expect(r.familles.vegetation.dessus).toBe(1);
+    expect(r.familles.bati.dessus).toBe(1);
+    // Le témoin : le sol est jugé, et il ne dépasse pas.
+    expect(r.familles.sol).toEqual({ testes: 1, dessus: 0, ecartMax: 0 });
+  });
+
+  it('range l’eau avec le sol, et l’inconnu dans « autres »', () => {
+    // L'eau est le second témoin : une surface libre ne dépasse pas le sursol.
+    const pos = new Float32Array([0, 0, 100, 1, 0, 140]);
+    const r = surfaceExcess(surface(), pos, new Uint8Array([9, 200]));
+    expect(r.familles.sol.testes).toBe(1);
+    expect(r.familles.autres).toEqual({ testes: 1, dessus: 1, ecartMax: 20 });
+  });
+
+  it('ne compte pas les points sans surface de référence', () => {
+    const pos = new Float32Array([0, 0, 300, 1000, 0, 300]);
+    const r = surfaceExcess(surface(), pos, new Uint8Array([5, 5]));
+    expect(r.testes).toBe(1);
+    expect(r.sansSurface).toBe(1);
+    expect(r.dessus).toBe(1);
+    expect(r.familles.vegetation.testes).toBe(1);
+  });
+
+  it('laisse passer ce qui reste sous la marge', () => {
+    // Sur une arête de toit, un point peut dépasser d'une cellule voisine sans
+    // que rien ne soit faux : la marge n'est pas une tolérance de complaisance,
+    // elle décrit ce qu'une grille ne peut pas tenir.
+    const pos = new Float32Array([0, 0, 121.5, 1, 0, 121.9]);
+    const cls = new Uint8Array([6, 6]);
+    expect(surfaceExcess(surface(), pos, cls).dessus).toBe(0);
+    expect(surfaceExcess(surface(), pos, cls, null, { marge: 1 }).dessus).toBe(2);
+    expect(surfaceExcess(surface(), pos, cls).marge).toBe(MARGE_SURFACE);
+  });
+
+  it('ne remonte pas d’écart max quand rien ne dépasse', () => {
+    const r = surfaceExcess(surface(), new Float32Array([0, 0, 100]), new Uint8Array([2]));
+    expect(r.dessus).toBe(0);
+    expect(r.ecartMax).toBe(0);
+  });
+
+  it('accumule sur plusieurs lots', () => {
+    const un = surfaceExcess(surface(), new Float32Array([0, 0, 130]), new Uint8Array([5]));
+    surfaceExcess(surface(), new Float32Array([1, 0, 140]), new Uint8Array([1]), un);
+    expect(un.testes).toBe(2);
+    expect(un.dessus).toBe(2);
+    expect(un.ecartMax).toBeCloseTo(20);
+    expect(un.familles.vegetation.ecartMax).toBeCloseTo(10);
+    expect(un.familles.nonClasse.ecartMax).toBeCloseTo(20);
+  });
+
+  it('couvre chaque code par une seule famille', () => {
+    // Un code rangé deux fois compterait deux fois, et la somme des familles
+    // cesserait d'égaler le total.
+    const vus = FAMILLES_SURFACE.flatMap((f) => f.codes);
+    expect(new Set(vus).size).toBe(vus.length);
   });
 });
