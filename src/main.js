@@ -72,7 +72,10 @@ function renderLegend() {
   const rows = shares(counts);
   el.legend.innerHTML = rows
     .map((r) => {
-      const rgb = PRESETS[presetName].palette[r.code] ?? [90, 90, 95];
+      // Une entrée peut être une liste de couleurs : la pastille montre la
+      // première, sans quoi elle afficherait « rgb(255,200,87,233,114,76…) ».
+      const entree = PRESETS[presetName].palette[r.code] ?? [90, 90, 95];
+      const rgb = Array.isArray(entree[0]) ? entree[0] : entree;
       const off = hidden.has(r.code) ? ' off' : '';
       return (
         `<label class="cls${off}"><input type="checkbox" data-code="${r.code}"` +

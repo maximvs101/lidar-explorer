@@ -19,15 +19,22 @@ describe('palettes', () => {
     }
   });
 
-  it('ne contiennent que des triplets d’octets valides', () => {
-    for (const [name, palette] of [['lecture', DEFAULT_PALETTE], ['maquette', MODEL_PALETTE]]) {
-      for (const [code, rgb] of Object.entries(palette)) {
-        expect(rgb, `${name}/${code}`).toHaveLength(3);
-        for (const channel of rgb) {
-          expect(Number.isInteger(channel)).toBe(true);
-          expect(channel).toBeGreaterThanOrEqual(0);
-          expect(channel).toBeLessThanOrEqual(255);
-        }
+  it('ne contiennent que des triplets d’octets valides, listes comprises', () => {
+    // Une entrée est soit une couleur, soit une liste de couleurs. Ne valider
+    // que la première forme laisserait passer n'importe quoi dans la seconde.
+    const verifier = (couleur, ou) => {
+      expect(couleur, ou).toHaveLength(3);
+      for (const canal of couleur) {
+        expect(Number.isInteger(canal), `${ou}: ${canal} entier`).toBe(true);
+        expect(canal, ou).toBeGreaterThanOrEqual(0);
+        expect(canal, ou).toBeLessThanOrEqual(255);
+      }
+    };
+    for (const name of PRESET_NAMES) {
+      for (const [code, entree] of Object.entries(PRESETS[name].palette)) {
+        const liste = Array.isArray(entree[0]) ? entree : [entree];
+        expect(liste.length, `${name}/${code}: liste non vide`).toBeGreaterThan(0);
+        liste.forEach((c, i) => verifier(c, `${name}/${code}[${i}]`));
       }
     }
   });

@@ -57,6 +57,61 @@ const BASE = {
   tint: 0.16,
 };
 
+/**
+ * Nuanciers repris de prettymapp (Christoph Rieke), sous licence MIT :
+ *
+ *   Copyright (c) 2023 Christoph Rieke — https://github.com/chrieke/prettymapp
+ *
+ * Contrairement à prettymaps (AGPL-3.0), cette licence permet la reprise ; ce
+ * sont ses valeurs de couleur qui sont reprises, transposées de ses catégories
+ * OpenStreetMap vers les classes ASPRS du LiDAR :
+ *
+ *   urban -> bâtiment (6)        water -> eau (9, 66)
+ *   woodland -> végétation haute (5)   grassland -> végétation basse (3, 4)
+ *   streets -> pont (17)         other -> sol (2)
+ *
+ * Une entrée peut être une liste de couleurs : les points s'y répartissent
+ * selon leur position, ce qui rend l'équivalent du `cmap` d'origine, où chaque
+ * bâtiment tire sa teinte dans une gamme.
+ */
+const NEUTRES = { 1: [176, 170, 160], 64: [206, 180, 130], 65: [178, 150, 176], 67: [186, 182, 176] };
+
+export const PEACH_PALETTE = {
+  ...NEUTRES,
+  2: [242, 244, 203],
+  3: [208, 241, 191],
+  4: [176, 218, 160],
+  5: [100, 185, 106],
+  6: [[255, 200, 87], [233, 114, 76], [197, 40, 61]],
+  9: [161, 227, 255],
+  17: [47, 55, 55],
+  66: [161, 227, 255],
+};
+
+export const AUBURN_PALETTE = {
+  ...NEUTRES,
+  2: [242, 244, 203],
+  3: [139, 177, 116],
+  4: [120, 165, 100],
+  5: [100, 185, 106],
+  6: [[67, 54, 51], [255, 94, 91], [255, 94, 91]],
+  9: [168, 225, 230],
+  17: [47, 55, 55],
+  66: [168, 225, 230],
+};
+
+export const CITRUS_PALETTE = {
+  ...NEUTRES,
+  2: [234, 226, 183],
+  3: [85, 166, 48],
+  4: [110, 176, 32],
+  5: [128, 185, 24],
+  6: [[255, 255, 63], [244, 213, 141], [245, 203, 92]],
+  9: [0, 127, 95],
+  17: [255, 255, 255],
+  66: [0, 127, 95],
+};
+
 export const PRESETS = {
   lecture: {
     label: 'lecture',
@@ -94,6 +149,44 @@ export const PRESETS = {
     // d'une carte dessinée, pas la douceur d'une maquette de résine. La teinte
     // varie davantage pour que les îlots voisins se distinguent.
     diorama: { ...BASE, strength: 22, vignette: 0.16, saturation: 1.24, tint: 0.24, lightAmount: 0.62 },
+  },
+  peach: {
+    label: 'peach',
+    palette: PEACH_PALETTE,
+    background: 0xf2f4cb,
+    plinth: 0xdcdeb4,
+    post: true,
+    shape: 'square',
+    radius: 420,
+    round: false,
+    boost: 1,
+    // Nuanciers vifs pensés pour du dessin à plat : on baisse la saturation
+    // ajoutée et la variation de teinte, que la gamme de couleurs fournit déjà.
+    diorama: { ...BASE, strength: 20, saturation: 1.04, tint: 0.06, vignette: 0.18 },
+  },
+  auburn: {
+    label: 'auburn',
+    palette: AUBURN_PALETTE,
+    background: 0xf2f4cb,
+    plinth: 0xd6d8a8,
+    post: true,
+    shape: 'circle',
+    radius: 450,
+    round: false,
+    boost: 1,
+    diorama: { ...BASE, strength: 20, saturation: 1.04, tint: 0.06, vignette: 0.18 },
+  },
+  citrus: {
+    label: 'citrus',
+    palette: CITRUS_PALETTE,
+    background: 0xeae2b7,
+    plinth: 0xd2c89c,
+    post: true,
+    shape: 'square',
+    radius: 420,
+    round: false,
+    boost: 1,
+    diorama: { ...BASE, strength: 20, saturation: 1.04, tint: 0.06, vignette: 0.18 },
   },
 };
 

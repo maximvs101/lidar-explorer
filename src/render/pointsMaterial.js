@@ -50,7 +50,10 @@ export const MODEL_PALETTE = {
 
 const FALLBACK = [90, 90, 95];
 
+const VARIANTS = 4;
+
 const VERTEX = /* glsl */ `
+  #define VARIANTES 4.0
   attribute float classification;
   uniform sampler2D uPalette;
   uniform float uSize;
@@ -74,8 +77,14 @@ const VERTEX = /* glsl */ `
   }
 
   void main() {
-    vec4 entry = texture2D(uPalette, vec2((classification + 0.5) / 256.0, 0.5));
-    vColor = entry.rgb * (1.0 + uTint * (bruit(position.xy) - 0.5));
+    // La palette a VARIANTES lignes : le bruit spatial en choisit une, si bien
+    // que deux ilots voisins ne prennent pas la meme teinte. C'est le principe
+    // du cmap de prettymapp, ou chaque batiment tire sa couleur dans une
+    // liste — bien plus vivant qu'une seule teinte modulee en luminosite.
+    float variante = floor(bruit(position.xy) * VARIANTES);
+    vec4 entry = texture2D(uPalette, vec2((classification + 0.5) / 256.0,
+                                          (variante + 0.5) / VARIANTES));
+    vColor = entry.rgb * (1.0 + uTint * (bruit(position.xy + 137.0) - 0.5));
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mv;
     gl_PointSize = uAttenuate > 0.5 ? max(1.0, uBoost * uSize * uScale / max(-mv.z, 0.001)) : uSize * uBoost;
@@ -118,8 +127,8 @@ export class PointsMaterialPool {
   }
 
   _buildTexture() {
-    const data = new Uint8Array(256 * 4);
-    const texture = new THREE.DataTexture(data, 256, 1, THREE.RGBAFormat);
+    const data = new Uint8Array(256 * VARIANTS * 4);
+    const texture = new THREE.DataTexture(data, 256, VARIANTS, THREE.RGBAFormat);
     texture.magFilter = THREE.NearestFilter;
     texture.minFilter = THREE.NearestFilter;
     texture.generateMipmaps = false;
@@ -130,13 +139,31 @@ export class PointsMaterialPool {
 
   _fill(data = this.texture.image.data) {
     for (let code = 0; code < 256; code += 1) {
-      const rgb = this.palette[code] ?? FALLBACK;
-      const o = code * 4;
-      data[o] = rgb[0];
-      data[o + 1] = rgb[1];
-      data[o + 2] = rgb[2];
-      data[o + 3] = this.hidden.has(code) ? 0 : 255;
+      const entry = this.palette[code] ?? FALLBACK;
+      // Une entree est soit une couleur, soit une liste de couleurs entre
+      // lesquelles les points se repartissent.
+      const liste = Array.isArray(entry[0]) ? entry : [entry];
+      const alpha = this.hidden.has(code) ? 0 : 255;
+      for (let v = 0; v < VARIANTS; v += 1) {
+        // Les variantes sont echelonnees sur la liste : deux couleurs donnent
+        // deux tons purs et deux intermediaires, trois en donnent quatre.
+        const t = VARIANTS > 1 ? (v / (VARIANTS - 1)) * (liste.length - 1) : 0;
+        const i = Math.min(Math.floor(t), liste.length - 1);
+        const j = Math.min(i + 1, liste.length - 1);
+        const f = t - i;
+        const o = (v * 256 + code) * 4;
+        for (let c = 0; c < 3; c += 1) {
+          data[o + c] = Math.round(liste[i][c] * (1 - f) + liste[j][c] * f);
+        }
+        data[o + 3] = alpha;
+      }
     }
+  }
+
+  /** Première couleur d'une entrée, pour la légende. */
+  swatch(code) {
+    const entry = this.palette[code] ?? FALLBACK;
+    return Array.isArray(entry[0]) ? entry[0] : entry;
   }
 
   /** Applique un jeu de classes masquées. Effet immédiat, sans retoucher aux points. */
