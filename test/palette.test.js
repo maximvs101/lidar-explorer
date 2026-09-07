@@ -162,3 +162,25 @@ describe('presets d’affichage', () => {
     expect(getPreset('nexistepas')).toBe(PRESETS.lecture);
   });
 });
+
+describe('réglages d’affichage et presets', () => {
+  it('aucun preset n’impose la taille ni la forme des points', () => {
+    // Taille et forme sont des préférences d'affichage : un preset qui les
+    // déclare les écrase au moment où l'on bascule dessus, et l'on perd son
+    // réglage juste en comparant deux rendus. Si un preset doit vraiment les
+    // imposer un jour, ce test est l'endroit où l'assumer.
+    for (const name of PRESET_NAMES) {
+      const preset = PRESETS[name];
+      expect(preset.boost, `${name} impose une taille de points`).toBeUndefined();
+      expect(preset.round, `${name} impose la forme des points`).toBeUndefined();
+    }
+  });
+
+  it('ne fixe pas non plus le seuil de détail', () => {
+    // Même raison : il commande le volume chargé, c'est un arbitrage de
+    // l'utilisateur entre finesse et mémoire, pas une propriété de style.
+    for (const name of PRESET_NAMES) {
+      expect(PRESETS[name].minScreenError, `${name}`).toBeUndefined();
+    }
+  });
+});

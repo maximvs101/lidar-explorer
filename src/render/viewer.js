@@ -321,13 +321,16 @@ export class Viewer {
       (preset.background & 0xff) / 255,
     );
 
-    // Points carres hors mode lecture : ils se joignent bord a bord la ou des
-    // points ronds laissent des interstices. En revanche ils ne sont plus
-    // grossis — mesure faite, le grossissement ne bouchait plus rien et ne
-    // faisait qu'effacer la resolution qu'on est allé chercher dans la donnee.
-    this.materials.setRound(preset.round ?? true);
-    this.pointScale = preset.boost ?? 1;
-    this.materials.setBoost(this.pointScale);
+    // Taille et forme des points ne sont PAS touchees ici : ce sont des
+    // preferences d'affichage, pas des attributs de style. Les ecraser a chaque
+    // changement de preset obligerait a les regler de nouveau juste pour
+    // comparer deux rendus — or comparer est precisement l'usage des presets.
+    // Un preset peut malgre tout les imposer en les declarant explicitement.
+    if (preset.round !== undefined) this.materials.setRound(preset.round);
+    if (preset.boost !== undefined) {
+      this.pointScale = preset.boost;
+      this.materials.setBoost(this.pointScale);
+    }
 
     if (preset.diorama) this.diorama.set(preset.diorama);
     this.materials.setTint(preset.tint ?? preset.diorama?.tint ?? 0);

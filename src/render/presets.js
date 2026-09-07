@@ -17,6 +17,11 @@ import { DEFAULT_PALETTE, MODEL_PALETTE } from './pointsMaterial.js';
  * 0,18 point de pourcentage. `round: false` reste disponible pour un preset qui
  * voudrait l'aspect mosaïque, et l'interface laisse le choix à la volée.
  *
+ * Aucun preset ne fixe la taille ni la forme des points : ce sont des
+ * preferences d'affichage, conservees d'un preset a l'autre pour qu'on puisse
+ * comparer deux rendus sans avoir a les regler de nouveau. Un preset peut
+ * cependant les imposer en declarant `boost` ou `round`.
+ *
  * Aucun preset ne grossit les points. Ils l'ont fait un temps, pour éviter que
  * le fond transparaisse entre eux ; mesure faite, ce grossissement ne corrige
  * plus rien depuis que l'ombrage a été adouci — moins d'un point de pourcentage
@@ -125,7 +130,6 @@ export const PRESETS = {
     background: 0x080a0e,
     post: false,
     shape: null,
-    boost: 1,
     tint: 0,
   },
   maquette: {
@@ -136,7 +140,6 @@ export const PRESETS = {
     post: true,
     shape: 'circle',
     radius: 450,
-    boost: 1,
     diorama: { ...BASE },
   },
   plan: {
@@ -147,7 +150,6 @@ export const PRESETS = {
     post: true,
     shape: 'square',
     radius: 420,
-    boost: 1,
     // Ombrage plus marqué et vignettage plus discret : on cherche le trait net
     // d'une carte dessinée, pas la douceur d'une maquette de résine. La teinte
     // varie davantage pour que les îlots voisins se distinguent.
@@ -159,7 +161,6 @@ export const PRESETS = {
     background: 0xf4f1e8,
     post: true,
     shape: null,
-    boost: 1,
     // La couleur vient de la hauteur au-dessus du sol, pas de la classe.
     heightMode: true,
     heightMax: 30,
@@ -173,7 +174,6 @@ export const PRESETS = {
     background: 0xf6f5f2,
     post: false,
     shape: null,
-    boost: 1,
     // Rouge : végétation haute posée au sol. Magenta : bâtiment enterré.
     // Gris neutre : rien à redire — ce qui n'est pas la même chose que vérifié.
     auditMode: true,
@@ -186,7 +186,6 @@ export const PRESETS = {
     post: true,
     shape: 'square',
     radius: 420,
-    boost: 1,
     // Nuanciers vifs pensés pour du dessin à plat : on baisse la saturation
     // ajoutée et la variation de teinte, que la gamme de couleurs fournit déjà.
     diorama: { ...BASE, strength: 20, saturation: 1.04, tint: 0.06, vignette: 0.18 },
@@ -199,7 +198,6 @@ export const PRESETS = {
     post: true,
     shape: 'circle',
     radius: 450,
-    boost: 1,
     diorama: { ...BASE, strength: 20, saturation: 1.04, tint: 0.06, vignette: 0.18 },
   },
   citrus: {
@@ -210,7 +208,6 @@ export const PRESETS = {
     post: true,
     shape: 'square',
     radius: 420,
-    boost: 1,
     diorama: { ...BASE, strength: 20, saturation: 1.04, tint: 0.06, vignette: 0.18 },
   },
 };
