@@ -72,9 +72,9 @@
       #exportrow output { font-variant-numeric: tabular-nums; }
       #modes button.on, button.on { border-color: var(--accent); color: var(--accent); }
       #stage.measuring { cursor: crosshair; }
-      #aide { margin: 0 0 12px; font-size: 12px; }
-      #aide summary { cursor: pointer; color: var(--accent); user-select: none; }
-      #aide summary:hover { text-decoration: underline; }
+      details.pliant { margin: 0 0 12px; font-size: 12px; }
+      details.pliant > summary { cursor: pointer; color: var(--accent); user-select: none; }
+      details.pliant > summary:hover { text-decoration: underline; }
       table.aide { margin: 8px 0 4px; font-size: 11px; }
       table.aide td:first-child { color: var(--text); white-space: nowrap; padding-right: 12px; }
       table.aide td:last-child { color: var(--dim); }
@@ -127,7 +127,7 @@
       <h1>Explorateur LiDAR HD</h1>
       <p class="sub">Cliquez sur la carte pour choisir un lieu. Les données sont lues directement chez l'IGN.</p>
 
-      <details id="aide">
+      <details id="aide" class="pliant">
         <summary>Comment s'en servir</summary>
         <table class="aide">
           <tr><td>clic gauche + glisser</td><td>faire tourner la vue</td></tr>
@@ -212,8 +212,10 @@
       <h2>Compteurs</h2>
       <div id="stats"><span class="dim">—</span></div>
 
-      <h2>Sources</h2>
-      <div id="sources"></div>
+      <details id="sourcesbox" class="pliant" style="margin-top:16px">
+        <summary>Sources et licences</summary>
+        <div id="sources"></div>
+      </details>
 
       <p class="foot" style="margin-top:14px">
         <button id="clear">Vider le cache</button>

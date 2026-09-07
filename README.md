@@ -181,11 +181,13 @@ de version viennent du fichier plutôt que d'une saisie.
 
 ## Données et licences
 
-La page les déclare elle-même, dans son panneau **Sources**. Ce n'est pas une
-liste tenue à la main : elle est construite à partir des constantes que le code
-appelle réellement, et des dépendances du `package.json`. Une déclaration
-recopiée à côté du code cesse d'être vraie au premier changement, sans erreur ni
-diff — et une mention de source fausse est pire que pas de mention du tout.
+La page les déclare elle-même, sous **Sources et licences** — un bloc replié par
+défaut, la liste complète occupant plus de place que le reste du panneau. La
+mention courte reste visible en permanence sur la carte. Ce n'est pas une liste
+tenue à la main : elle est construite à partir des constantes que le code appelle
+réellement, et des dépendances du `package.json`. Une déclaration recopiée à côté
+du code cesse d'être vraie au premier changement, sans erreur ni diff — et une
+mention de source fausse est pire que pas de mention du tout.
 
 Tout vient de l'**IGN — Géoplateforme**, sous
 [Licence Ouverte / Open Licence 2.0 (Etalab)](https://www.etalab.gouv.fr/licence-ouverte-open-licence/),
