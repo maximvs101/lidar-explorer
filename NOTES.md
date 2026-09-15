@@ -154,6 +154,22 @@ Windows, et le build sort `/Program Files/Git/lidar-explorer/assets/…`.
 Vérifié en servant réellement le `dist` sous `/lidar-explorer/` : 1 074 300
 points décodés, worker et WASM chargés depuis le chemin de base, aucune erreur.
 
+## Le service change sous les pieds
+
+Entre le 7 et le 15 septembre 2026, la couche WFS `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle`
+a disparu des capacités de la Géoplateforme, sans redirection : le service
+répond `400 InvalidParameterValue — Unknown namespace`, et plus aucune dalle ne
+se trouve. Elle est remplacée par `IGNF_LIDAR-HD_METADONNEE:metadata`, qui porte
+la même emprise et la même dalle mais d'autres champs : `url_npl` au lieu de
+`url`, pas de `name`, les métadonnées répétées à plat à côté de l'objet
+`metadata`, et le capteur sérialisé à plat comme un tableau PostgreSQL —
+`{"RIEGL VQ-1560 II:S2224049"}`, accolades comprises. Le fichier COPC lui-même a
+changé d'édition (`2024-12-20`) et pèse 268 Mo au lieu de 171.
+
+Deux choses ont tenu : la déclaration des sources, parce qu'elle lit la
+constante au lieu de la recopier, et le test qui interdit de reconstruire l'URL
+depuis le nom — le nom se dérive désormais de l'URL, jamais l'inverse.
+
 ## Pièges rencontrés
 
 Ceux qui ont coûté du temps, et qu'aucun message d'erreur n'annonçait.

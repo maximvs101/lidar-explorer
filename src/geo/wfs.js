@@ -131,7 +131,11 @@ function geometryBounds(geometry) {
  */
 export function parseTileFeature(feature) {
   const p = feature?.properties;
-  if (!p?.url) return null;
+  // Deux formes de couche se sont succédé : l'ancienne portait `url`, la
+  // nouvelle (`IGNF_LIDAR-HD_METADONNEE:metadata`, septembre 2026) porte
+  // `url_npl` — le nuage de points — à côté d'URL WMS pour les rasters.
+  const url = p?.url ?? p?.url_npl ?? null;
+  if (!url) return null;
   const bounds = geometryBounds(feature.geometry);
   if (!bounds) return null;
 
@@ -142,28 +146,50 @@ export function parseTileFeature(feature) {
   } catch {
     meta = {}; // métadonnée illisible : la dalle reste chargeable
   }
+  // La nouvelle couche répète les métadonnées à plat ; l'une ou l'autre source
+  // suffit, et l'objet imbriqué garde la priorité quand les deux existent.
+  const champ = (nom) => meta[nom] ?? p[nom] ?? null;
+
+  // La nouvelle couche n'a pas de `name`. Le dériver de l'URL est le sens sûr :
+  // c'est reconstruire l'URL depuis un nom qui donnait un 404.
+  const name = p.name ?? decodeURIComponent(url.split('/').pop() ?? '').replace(/\.copc\.laz$|\.laz$/i, '') ?? null;
 
   return {
     id: p.id ?? feature.id ?? null,
-    name: p.name ?? null,
-    url: p.url,
-    format: p.format ?? null,
+    name: name || null,
+    url,
+    format: p.format ?? (url.endsWith('.copc.laz') ? 'COPC' : null),
     bounds,
     acquisition: {
-      start: meta.date_debut_acquisition ?? null,
-      end: meta.date_fin_acquisition ?? null,
-      edition: meta.date_edition ?? null,
-      sensor: Array.isArray(meta.capteur) ? meta.capteur.join(', ') : (meta.capteur ?? null),
-      classifier: meta.procede_classement ?? null,
-      operator: meta.moe_acquisition ?? null,
-      mission: meta.code_mission ?? null,
-      verticalDatum: meta.systeme_altimetrique ?? null,
+      start: champ('date_debut_acquisition'),
+      end: champ('date_fin_acquisition'),
+      edition: champ('date_edition'),
+      sensor: capteur(champ('capteur')),
+      classifier: champ('procede_classement'),
+      operator: champ('moe_acquisition'),
+      mission: champ('code_mission'),
+      verticalDatum: champ('systeme_altimetrique'),
     },
     // Volontairement séparé du compte réel du fichier : le WFS annonce ici
     // 31 417 300 points là où l'en-tête COPC en déclare 31 416 352. L'écart de
     // 948 interdit d'utiliser cette valeur pour contrôler un décodage.
-    announcedPointCount: meta.nombre_points ?? null,
+    announcedPointCount: champ('nombre_points'),
   };
+}
+
+/**
+ * Le capteur arrive sous trois formes selon la couche et le champ : un tableau
+ * dans l'objet `metadata`, ou à plat une chaîne `{"RIEGL VQ-1560 II:S2224049"}`
+ * — un tableau PostgreSQL sérialisé tel quel, accolades comprises.
+ */
+function capteur(valeur) {
+  if (valeur == null) return null;
+  if (Array.isArray(valeur)) return valeur.join(', ');
+  const s = String(valeur).trim();
+  if (s.startsWith('{') && s.endsWith('}')) {
+    return s.slice(1, -1).split(',').map((x) => x.trim().replace(/^"|"$/g, '')).join(', ');
+  }
+  return s;
 }
 
 /**

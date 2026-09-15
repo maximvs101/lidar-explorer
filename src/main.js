@@ -153,6 +153,9 @@ function renderLegend() {
 function applyHidden() {
   viewer.setHiddenClasses(hidden);
   renderLegend();
+  // Le profil suit les classes affichees : ce qui disparait de la scene
+  // disparait du trace.
+  renderSection();
 }
 
 const fmt = (n) => Math.round(n).toLocaleString('fr-FR');
@@ -369,6 +372,7 @@ async function pick(point) {
   el.exportBtn.disabled = true;
   el.measureBtn.disabled = true;
   setMeasuring(false);
+  resetMeasure();
   selected = null;
   setSession(null);
   viewer.clear();
@@ -599,9 +603,35 @@ function renderSection() {
 el.section.addEventListener('change', renderSection);
 el.sectionWidth.addEventListener('change', renderSection);
 
+/**
+ * Le profil suit le chargement.
+ *
+ * La bande 3D est recalculee par le shader a chaque image, donc elle se
+ * densifie a mesure que les noeuds arrivent ; le profil, lui, est un
+ * echantillon pris a un instant. Sans ce rappel, coche a la premiere image il
+ * restait a deux cents points quand la scene en avait deux millions, et son
+ * compte annonce ne bougeait pas.
+ */
+let noeudsDuProfil = -1;
+function renderSectionIfStale() {
+  if (!el.section.checked || picks.length < 2) { noeudsDuProfil = -1; return; }
+  const noeuds = viewer.stats.nodesInScene;
+  if (noeuds === noeudsDuProfil) return;
+  noeudsDuProfil = noeuds;
+  renderSection();
+}
+
 el.measureBtn.addEventListener('click', () => setMeasuring(!measuring));
 
-el.measureClear.addEventListener('click', () => {
+/**
+ * Efface la mesure et la coupe, dans la scene et dans le panneau.
+ *
+ * Appele par le bouton, et par le choix d'un nouveau lieu : une mesure posee
+ * dans le repere d'une dalle n'a aucun sens dans la suivante, et une case
+ * « coupe » restee cochee couperait la nouvelle scene le long d'un segment
+ * d'ailleurs.
+ */
+function resetMeasure() {
   picks = [];
   viewer.clearMeasure();
   el.section.checked = false;
@@ -610,7 +640,9 @@ el.measureClear.addEventListener('click', () => {
     ? '<span class="dim">cliquez un premier point</span>'
     : '<span class="dim">—</span>';
   el.measureActions.hidden = true;
-});
+}
+
+el.measureClear.addEventListener('click', resetMeasure);
 
 /**
  * Distinguer le clic du glissement.
@@ -758,12 +790,19 @@ function applyHeightFilter() {
     el.hFilter.checked = false;
     el.hMin.disabled = true;
     el.hMax.disabled = true;
-    el.hFilterHint.innerHTML = '<b>Sans modèle de terrain, la hauteur au-dessus du sol '
-      + 'n’existe pas.</b> Chargez un nuage, le terrain suit.';
+    // Deux raisons possibles, et elles ne se traitent pas pareil : sans nuage il
+    // faut en charger un ; avec un nuage, le terrain n'a simplement pas encore
+    // repondu, et il suffit de reessayer dans quelques secondes.
+    el.hFilterHint.innerHTML = session
+      ? '<b>Le terrain n’a pas encore répondu.</b> Le MNT arrive en quelques '
+        + 'secondes, les points de sol aussi — réessayez dans un instant.'
+      : '<b>Sans modèle de terrain, la hauteur au-dessus du sol n’existe pas.</b> '
+        + 'Chargez un nuage, le terrain suit.';
   } else {
     el.hFilterHint.textContent = HINT_FILTRE;
   }
   renderLegend();
+  renderSection();
 }
 
 for (const champ of [el.hFilter, el.hMin, el.hMax]) {
@@ -992,6 +1031,7 @@ setInterval(() => {
   renderScale();
   renderFootprint();
   maybeExtend();
+  renderSectionIfStale();
   const sel = s.lastSelection;
   // En mode canopée, on affiche ce que la mesure vaut : la part de terrain
   // réellement observée. Sous couvert dense elle chute, et les hauteurs

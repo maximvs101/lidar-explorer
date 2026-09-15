@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { isWithinMetropole, tileNameAt, toLambert93, toWgs84 } from '../src/geo/projection.js';
 import { TileIndex, acquisitionSeason, contains, parseTileFeature } from '../src/geo/wfs.js';
@@ -204,5 +205,67 @@ describe('contains et saison', () => {
     expect(acquisitionSeason({ start: '2022-01-14' })).toBe('végétation sans feuilles');
     expect(acquisitionSeason({ start: '2022-04-02' })).toBe('végétation intermédiaire');
     expect(acquisitionSeason({})).toBeNull();
+  });
+});
+
+describe('parseTileFeature — couche IGNF_LIDAR-HD_METADONNEE (septembre 2026)', () => {
+  // L'ancienne couche a disparu du service entre le 7 et le 15 septembre 2026 ;
+  // la nouvelle porte `url_npl` au lieu de `url`, pas de `name`, et répète les
+  // métadonnées à plat. Fixture capturée telle quelle sur le service.
+  const FEATURE = JSON.parse(
+    readFileSync(new URL('./fixtures/wfs-metadata-2026-09.json', import.meta.url), 'utf-8'),
+  );
+
+  it('lit l’URL du nuage dans `url_npl`', () => {
+    const tile = parseTileFeature(FEATURE);
+    expect(tile).not.toBeNull();
+    expect(tile.url).toBe(FEATURE.properties.url_npl);
+    expect(tile.url).toMatch(/\.copc\.laz$/);
+    expect(tile.format).toBe('COPC');
+  });
+
+  it('dérive le nom de l’URL, jamais l’inverse', () => {
+    const tile = parseTileFeature(FEATURE);
+    expect(tile.name).toBe('LHD_FXX_0574_6280_PTS_LAMB93_IGN69');
+  });
+
+  it('lit l’emprise de la dalle', () => {
+    const { bounds } = parseTileFeature(FEATURE);
+    expect(bounds.maxX - bounds.minX).toBeCloseTo(1000, 0);
+    expect(bounds.maxY - bounds.minY).toBeCloseTo(1000, 0);
+    expect(contains(bounds, 574800, 6279800)).toBe(true);
+  });
+
+  it('retrouve les métadonnées d’acquisition, à plat ou imbriquées', () => {
+    const tile = parseTileFeature(FEATURE);
+    // L'objet imbriqué écrit `2022-05-29`, le champ à plat `2022-05-29Z` : les
+    // deux disent le même jour, et c'est le jour qui décide de la saison.
+    expect(tile.acquisition.start).toMatch(/^2022-05-29/);
+    expect(tile.acquisition.end).toMatch(/^2022-06-15/);
+    expect(acquisitionSeason(tile.acquisition)).toBeTruthy();
+    expect(tile.acquisition.classifier).toBe('IGN_AUTO_V5');
+    expect(tile.acquisition.verticalDatum).toBe('IGN69');
+    // Nombre dans l'objet imbriqué, chaîne à plat : on compare en nombre.
+    expect(Number(tile.announcedPointCount)).toBe(47947298);
+
+    // Sans l'objet imbriqué, les champs à plat suffisent.
+    const aPlat = { ...FEATURE, properties: { ...FEATURE.properties, metadata: undefined } };
+    expect(parseTileFeature(aPlat).acquisition.start).toMatch(/^2022-05-29/);
+    expect(parseTileFeature(aPlat).acquisition.mission).toBe('22LHD1IQ');
+  });
+
+  it('déballe le capteur sérialisé comme un tableau PostgreSQL', () => {
+    // À plat, le champ arrive en `{"RIEGL VQ-1560 II:S2224049"}`, accolades
+    // comprises ; lu tel quel, le panneau afficherait les accolades.
+    const aPlat = { ...FEATURE, properties: { ...FEATURE.properties, metadata: undefined } };
+    expect(parseTileFeature(aPlat).acquisition.sensor).toBe('RIEGL VQ-1560 II:S2224049');
+    // Et la forme imbriquée, un vrai tableau, donne la même chose.
+    expect(parseTileFeature(FEATURE).acquisition.sensor).toBe('RIEGL VQ-1560 II:S2224049');
+  });
+
+  it('continue de lire l’ancienne forme', () => {
+    const tile = parseTileFeature(REAL_FEATURE);
+    expect(tile.url).toBe(REAL_FEATURE.properties.url);
+    expect(tile.name).toContain('_PTS_C_');
   });
 });

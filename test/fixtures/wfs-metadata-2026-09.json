@@ -1,0 +1,47 @@
+{
+  "type": "Feature",
+  "id": "metadata.370634",
+  "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+      [
+        [
+          [
+            574000.00009369,
+            6280000.00474064
+          ],
+          [
+            575000.00009295,
+            6280000.00474066
+          ],
+          [
+            575000.00009293,
+            6279000.00474047
+          ],
+          [
+            574000.00009367,
+            6279000.00474045
+          ],
+          [
+            574000.00009369,
+            6280000.00474064
+          ]
+        ]
+      ]
+    ]
+  },
+  "properties": {
+    "url_npl": "https://data.geopf.fr/telechargement/download/LiDARHD-NUALID/NUALHD_1-0__LAZ_LAMB93_IQ_2024-12-20/LHD_FXX_0574_6280_PTS_LAMB93_IGN69.copc.laz",
+    "metadata": "{\"capteur\": [\"RIEGL VQ-1560 II:S2224049\"], \"code_mission\": \"22LHD1IQ\", \"date_edition\": \"2024-12-20\", \"nombre_points\": 47947298, \"coordonnees_NW\": \"0574-6280\", \"moa_acquisition\": \"IGN\", \"moe_acquisition\": \"Eurosense\", \"procede_classement\": \"IGN_AUTO_V5\", \"date_fin_acquisition\": \"2022-06-15\", \"systeme_altimetrique\": \"IGN69\", \"moe_classement_manuel\": \"NR\", \"systeme_planimetrique\": \"LAMB93\", \"date_debut_acquisition\": \"2022-05-29\", \"moe_classement_automatique\": \"IGN\"}",
+    "capteur": "{\"RIEGL VQ-1560 II:S2224049\"}",
+    "code_mission": "22LHD1IQ",
+    "date_edition": "2024-12-20Z",
+    "nombre_points": 47947298,
+    "coordonnees_nw": "0574-6280",
+    "procede_classement": "IGN_AUTO_V5",
+    "date_fin_acquisition": "2022-06-15Z",
+    "systeme_altimetrique": "IGN69",
+    "date_debut_acquisition": "2022-05-29Z",
+    "moe_acquisition": "Eurosense"
+  }
+}

@@ -16,10 +16,18 @@ export const LICENCE = {
   producteur: 'IGN — Géoplateforme',
 };
 
-/** Index des dalles : quelle dalle couvre ce point, et où la télécharger. */
+/**
+ * Index des dalles : quelle dalle couvre ce point, et où la télécharger.
+ *
+ * La couche a changé de nom entre le 7 et le 15 septembre 2026 :
+ * `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` a disparu des capacités du service,
+ * remplacée par celle-ci. Le service répond alors `400 Unknown namespace`, et
+ * plus aucune dalle ne se trouve. Les champs ont changé avec le nom — voir
+ * `parseTileFeature`, qui lit les deux formes.
+ */
 export const WFS = {
   endpoint: 'https://data.geopf.fr/wfs/ows',
-  layer: 'IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle',
+  layer: 'IGNF_LIDAR-HD_METADONNEE:metadata',
 };
 
 /** Fonds de carte, en pseudo-Mercator. */

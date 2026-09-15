@@ -543,17 +543,42 @@ export class Viewer {
     this.materials.setSection(a, b, width);
     const axis = sectionAxis(a, b);
     const sample = emptySection();
+    const keep = this._sceneFilter();
     for (const points of this.loaded.values()) {
       addToSection(
         sample, axis, width,
         points.geometry.getAttribute('position').array,
         points.geometry.getAttribute('classification').array,
+        keep,
       );
       if (sample.truncated) break;
     }
     this._sectionAt = maintenant;
     this.section = { a: [a[0], a[1]], b: [b[0], b[1]], width, axis, sample };
     return this.section;
+  }
+
+  /**
+   * Le filtre que le shader applique a chaque point, reproduit cote CPU.
+   *
+   * Classes masquees et plage de hauteur — lue sur le terrain *publie*, celui
+   * dont la texture sert au rendu, pas sur un terrain qui arriverait ensuite.
+   * Rend null quand rien n'est filtre, pour que le parcours ne paie pas un
+   * appel par point pour rien.
+   */
+  _sceneFilter() {
+    const hidden = this.materials.hidden;
+    const plage = this.materials.shared.uHeightFilter === 1 ? this.materials.shared.uHeightRange : null;
+    const terrain = plage ? this._publishedTerrain : null;
+    if (hidden.size === 0 && !plage) return null;
+    return (x, y, z, classe) => {
+      if (hidden.has(classe)) return false;
+      if (plage) {
+        const h = terrain ? terrain.aboveGround(x, y, z) : NaN;
+        if (!Number.isFinite(h) || h < plage[0] || h > plage[1]) return false;
+      }
+      return true;
+    };
   }
 
   /** Eteint la coupe : la scene redevient entiere. */
@@ -571,6 +596,17 @@ export class Viewer {
    */
   setHeightFilter(min, max, active = true) {
     if (active) this.buildTerrain({ force: true });
+    // Une texture publiee ne suffit pas : la grille calculee se publie avant
+    // d'avoir recu le moindre point de sol, entierement a -9999, et le filtre
+    // ecarterait alors tout — une scene vide qui ressemble a une panne, le
+    // temps que le MNT ou les points de sol arrivent. On exige un terrain qui
+    // a observe quelque chose.
+    const vide = !this._publishedTerrain || !(this._publishedTerrain.observed > 0);
+    if (active && vide) {
+      this.heightFilter = null;
+      this.materials.setHeightFilter(min, max, false);
+      return false;
+    }
     this.heightFilter = active ? { min, max } : null;
     const pris = this.materials.setHeightFilter(min, max, active);
     if (!pris) this.heightFilter = null;

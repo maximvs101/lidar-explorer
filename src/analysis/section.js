@@ -57,17 +57,27 @@ export function emptySection(capacity = 240_000) {
 /**
  * Accumule les points d'un lot qui tombent dans la bande.
  *
+ * `keep(x, y, z, classe)` est le filtre que la scène applique par ailleurs ;
+ * le profil doit le suivre, sans quoi il décrit autre chose que ce qu'on voit.
+ *
  * La capacité est bornée : un profil n'a pas besoin de plus de points que le
  * canevas n'a de pixels, et une coupe traversant toute une dalle en offrirait
  * des millions. Quand le plafond est atteint, `truncated` le dit — un profil
  * tronqué en silence donnerait une enveloppe fausse, et c'est précisément
  * l'enveloppe qu'on vient y lire.
  */
-export function addToSection(sample, axis, width, positions, classification) {
+export function addToSection(sample, axis, width, positions, classification, keep = null) {
   const demi = width / 2;
   for (let n = 0; n < classification.length; n += 1) {
     sample.tested += 1;
-    const { along, offset } = axis.project(positions[n * 3], positions[n * 3 + 1]);
+    const x = positions[n * 3];
+    const y = positions[n * 3 + 1];
+    // Ce que la scene ecarte — classe masquee, hauteur hors plage — n'entre pas
+    // dans le profil. Sans ce filtre, la bande visible et le trace decrivaient
+    // deux ensembles differents, et le compte de points annonce comptait des
+    // points que personne ne voyait.
+    if (keep && !keep(x, y, positions[n * 3 + 2], classification[n])) continue;
+    const { along, offset } = axis.project(x, y);
     if (offset > demi) continue;
     if (sample.count >= sample.along.length) {
       sample.truncated = true;

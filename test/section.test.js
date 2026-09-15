@@ -84,6 +84,28 @@ describe('échantillonnage', () => {
     expect(s.count).toBe(2);
   });
 
+  it('applique le filtre de la scène, sinon le profil décrit autre chose', () => {
+    // Classe masquée ou hauteur hors plage : ce que le shader écarte n'entre
+    // pas dans le profil. Sans cela, la bande visible et le tracé décrivaient
+    // deux ensembles, et le compte annoncé comptait des points invisibles.
+    const pos = new Float32Array([10, 0, 100, 20, 0, 110, 30, 0, 120]);
+    const cls = new Uint8Array([2, 6, 5]);
+    const sansBati = addToSection(emptySection(), axe, 10, pos, cls, (x, y, z, c) => c !== 6);
+    expect(sansBati.count).toBe(2);
+    expect([...sansBati.classification.slice(0, 2)]).toEqual([2, 5]);
+    // Le filtre voit la position, donc une plage de hauteur s'exprime aussi.
+    const hauts = addToSection(emptySection(), axe, 10, pos, cls, (x, y, z) => z >= 115);
+    expect(hauts.count).toBe(1);
+    expect(hauts.zMin).toBe(120);
+    // Les points écartés comptent comme testés : ils ont bien été examinés.
+    expect(hauts.tested).toBe(3);
+  });
+
+  it('sans filtre, garde tout — le prédicat est facultatif', () => {
+    const pos = new Float32Array([10, 0, 100, 20, 0, 110]);
+    expect(addToSection(emptySection(), axe, 10, pos, new Uint8Array([2, 6]), null).count).toBe(2);
+  });
+
   it('garde la classe de chaque point', () => {
     const pos = new Float32Array([10, 0, 100, 20, 0, 110]);
     const s = addToSection(emptySection(), axe, 10, pos, new Uint8Array([2, 6]));

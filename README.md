@@ -96,6 +96,10 @@ scène.
   le point affiché le plus proche.
 - Le service **ne distingue pas** une zone hors territoire d'une zone pas encore
   livrée : il répond 200 avec une liste vide dans les deux cas.
+- **L'index des dalles a déjà changé de nom une fois** (septembre 2026), sans
+  préavis ni redirection : l'ancienne couche répond `400 Unknown namespace`. Le
+  parseur lit les deux formes, et la déclaration des sources suit la constante
+  plutôt qu'une copie — c'est ce qui l'a gardée vraie.
 
 Le détail des mesures, des contrôles et des pièges est dans [NOTES.md](NOTES.md).
 
@@ -127,7 +131,7 @@ serveur intermédiaire ni clé d'accès.
 | donnée | service | couches |
 |---|---|---|
 | nuages de points LiDAR HD | HTTP `Range` sur `data.geopf.fr/telechargement/` | — |
-| index des dalles | WFS 2.0 `data.geopf.fr/wfs/ows` | `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` |
+| index des dalles | WFS 2.0 `data.geopf.fr/wfs/ows` | `IGNF_LIDAR-HD_METADONNEE:metadata` |
 | modèles dérivés | WMS 1.3.0 `data.geopf.fr/wms-r/wms` | `IGNF_LIDAR-HD_{MNT,MNH}_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93` |
 | fonds de carte | WMTS 1.0.0 `data.geopf.fr/wmts` | `GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2`, `ORTHOIMAGERY.ORTHOPHOTOS` |
 
